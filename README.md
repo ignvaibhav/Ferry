@@ -4,17 +4,15 @@
 
 **yt-dlp, without the terminal.**
 
-Ferry is a browser extension that injects a native-feeling download UI on top of any yt-dlp supported page. Island is the local macOS engine that runs the actual download — no cloud, no accounts, no commands.
+Ferry is a browser extension that injects a native-feeling download UI on top of any yt-dlp supported page. Island is the local desktop engine (macOS, Windows, Linux) that runs the actual download — no cloud, no accounts, no commands.
 
-[![Version](https://img.shields.io/badge/version-1.0.3-B5F23D?labelColor=111111)](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.3)
-[![macOS](https://img.shields.io/badge/macOS-supported-B5F23D?labelColor=111111&logo=apple&logoColor=white)](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.3)
+[![Version](https://img.shields.io/badge/version-1.0.5-B5F23D?labelColor=111111)](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.5)
+[![macOS](https://img.shields.io/badge/macOS-supported-B5F23D?labelColor=111111&logo=apple&logoColor=white)](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.5)
+[![Windows](https://img.shields.io/badge/Windows-beta-B5F23D?labelColor=111111&logo=windows&logoColor=white)](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.5)
+[![Linux](https://img.shields.io/badge/Linux-beta-B5F23D?labelColor=111111&logo=linux&logoColor=white)](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.5)
 [![License](https://img.shields.io/badge/license-MIT-B5F23D?labelColor=111111)](./LICENSE)
-[![Chromium](https://img.shields.io/badge/Chromium-MV3-B5F23D?labelColor=111111&logo=googlechrome&logoColor=white)](./extension)
-[![Tauri](https://img.shields.io/badge/Tauri-2-B5F23D?labelColor=111111&logo=tauri&logoColor=white)](https://tauri.app)
-[![Rust](https://img.shields.io/badge/Rust-backend-B5F23D?labelColor=111111&logo=rust&logoColor=white)](./app/src-tauri)
-[![Local First](https://img.shields.io/badge/local--first-no%20cloud-B5F23D?labelColor=111111)](https://github.com/ignvaibhav/Ferry)
 
-[**Download for macOS →**](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.3) &nbsp;·&nbsp; [Website](https://ferryisland.vercel.app/) &nbsp;·&nbsp; [Bug Report](https://github.com/ignvaibhav/Ferry/issues/new?template=bug_report.md) &nbsp;·&nbsp; [Feature Request](https://github.com/ignvaibhav/Ferry/issues/new?template=feature_request.md)
+[**Download for macOS/Windows/Linux →**](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.5) &nbsp;·&nbsp; [Website Live Preview](https://ferryisland.vercel.app/) &nbsp;·&nbsp; [Bug Report](https://github.com/ignvaibhav/Ferry/issues/new?template=bug_report.md) &nbsp;·&nbsp; [Feature Request](https://github.com/ignvaibhav/Ferry/issues/new?template=feature_request.md)
 
 </div>
 
@@ -31,7 +29,7 @@ Ferry is a browser extension that injects a native-feeling download UI on top of
 Ferry is a two-part system:
 
 - **Ferry** — browser extension. Detects supported pages, injects a download button into the page UI, presents format and quality options, and streams live progress back to you.
-- **Island** — macOS desktop app. Runs silently in your menu bar, exposes a local API on `127.0.0.1:49152`, and executes `yt-dlp` + `ffmpeg` locally to handle every download.
+- **Island** — desktop app (macOS, Windows, Linux). Runs silently in your background, exposes a local API on `127.0.0.1:49152`, and executes `yt-dlp` + `ffmpeg` locally to handle every download.
 
 Everything stays on your machine. No data leaves your device. No servers are involved.
 
@@ -82,7 +80,7 @@ Island  (127.0.0.1:49152)
 
 ### Requirements
 
-- macOS — Intel or Apple Silicon
+- macOS, Windows, or Linux
 - Chrome, Brave, Edge, or Arc
 
 ---
@@ -91,16 +89,13 @@ Island  (127.0.0.1:49152)
 
 **1. Download and launch Island**
 
-Download `Island-macOS-app.zip` from [Releases](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.3), unzip it, and open Island. It runs in your menu bar with no visible window.
+Download your platform's installer from [Releases](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.5), and open Island. It runs quietly in the background.
 
-> **Gatekeeper note:** Builds aren't notarized yet. If macOS blocks Island on first open, right-click → Open. Or run:
-> ```bash
-> xattr -cr /path/to/Island.app
-> ```
+> **Gatekeeper note (macOS):** Builds aren't notarized yet. If macOS blocks Island on first open, right-click → Open.
 
 **2. Load the Ferry extension**
 
-Go to `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select the `extension/` folder from this repo.
+Download `ferry-extension.zip` from the latest release and unzip it. Go to `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select the extracted `extension` folder.
 
 **3. Open any supported page**
 
@@ -207,14 +202,14 @@ node scripts/smoke-api.mjs --queue  # queue a test download
 
 ## Current Status
 
-Ferry is in early release. The core download flow is stable on macOS.
+Ferry is in early release. The core download flow is stable on macOS, and Windows/Linux are officially in Beta!
 
-| | Status |
+| Platform | Status |
 |---|---|
 | macOS (Intel + Apple Silicon) | ✅ Supported |
+| Windows | 🚧 Beta |
+| Linux | 🚧 Beta |
 | Chrome · Brave · Edge · Arc | ✅ Supported |
-| Windows | 🔜 Planned |
-| Linux | 🔜 Planned |
 | Firefox | 🔜 Planned |
 | Code signing + notarization | 🔜 In progress |
 | Chrome Web Store listing | 🔜 In progress |
@@ -243,6 +238,18 @@ Contributions are welcome. Please read [CONTRIBUTING.md](./CONTRIBUTING.md) befo
 ## License
 
 MIT — see [LICENSE](./LICENSE)
+
+---
+
+## Star History
+
+<a href="https://star-history.com/#ignvaibhav/Ferry&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ignvaibhav/Ferry&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ignvaibhav/Ferry&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=ignvaibhav/Ferry&type=Date" />
+ </picture>
+</a>
 
 ---
 
