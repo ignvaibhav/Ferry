@@ -128,11 +128,35 @@ async function syncLatestRelease() {
     releaseLabels.forEach((node) => {
       node.textContent = version;
     });
-  } catch (_) {
-    releaseLabels.forEach((node) => {
-      node.textContent = "Latest release";
-    });
+  } catch (err) {
+    console.error("Failed to load release info:", err);
   }
 }
 
-syncLatestRelease();
+async function loadContributors() {
+  try {
+    const res = await fetch("https://api.github.com/repos/ignvaibhav/Ferry/contributors?per_page=5");
+    if (!res.ok) return;
+    const contributors = await res.json();
+    const container = document.getElementById("github-contributors");
+    if (!container) return;
+
+    let html = "";
+    contributors.forEach((c, idx) => {
+      html += `<a href="${c.html_url}" target="_blank" rel="noreferrer" title="${c.login}" style="z-index: ${10 - idx};">
+        <img src="${c.avatar_url}&s=48" alt="${c.login}">
+      </a>`;
+    });
+    
+    // Check if there are more than 5 contributors to show a +X indicator, if desired (optional)
+    // For now just show the avatars
+    container.innerHTML = html;
+  } catch (err) {
+    console.error("Failed to load contributors:", err);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  syncLatestRelease();
+  loadContributors();
+});
