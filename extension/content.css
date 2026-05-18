@@ -379,15 +379,12 @@
 }
 
 .ferry-clip-details {
+  width: 100%;
+  box-sizing: border-box;
   background: var(--f-surface2);
   border-radius: 10px;
   padding: 8px 10px;
   border: 0.5px solid var(--f-border2);
-}
-
-.ferry-section-label > p{
-  font-size: 12px;
-  margin-top: 3px;
 }
 
 .ferry-clip-details[open] {
@@ -408,6 +405,46 @@
   display: none;
 }
 
+.ferry-clip-toggle {
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 2px;
+  cursor: pointer;
+}
+
+.ferry-clip-toggle-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ferry-clip-toggle-label {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--f-text);
+}
+
+.ferry-clip-toggle-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--f-muted);
+  transition: transform var(--f-dur-fast) var(--f-ease-expo), color var(--f-dur-fast) var(--f-ease-expo);
+}
+
+.ferry-clip-details[open] .ferry-clip-toggle-chevron {
+  transform: rotate(180deg);
+  color: var(--f-text);
+}
+
 .ferry-thumbnail-preview-container {
   background: var(--f-surface2);
   border-radius: 8px;
@@ -426,6 +463,8 @@
 /* Dropdowns */
 .ferry-quality-select {
   width: 100%;
+  box-sizing: border-box;
+  min-height: 40px;
   background: var(--f-surface2);
   border: 0.5px solid var(--f-border2);
   border-radius: 8px;

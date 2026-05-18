@@ -2,26 +2,43 @@ import { checkHealth, openSettings, openDownloads } from "./api.js";
 import { ACTIVITY_KEY } from "./constants.js";
 
 var THEME_STORAGE_KEY = "ferryPopupThemeMode";
+var HEALTH_REFRESH_MS = 15000;
+var FEEDBACK_HIDE_MS = 2800;
 var systemThemeQuery = globalThis.matchMedia ? globalThis.matchMedia("(prefers-color-scheme: dark)") : null;
 
 var statusEl = document.getElementById("settings-status");
 var versionEl = document.getElementById("extension-version");
 var currentThemeModeEl = document.getElementById("current-theme-mode");
 var desktopLinkStateEl = document.getElementById("desktop-link-state");
+var islandVersionEl = document.getElementById("island-version");
+var islandPortEl = document.getElementById("island-port");
+var downloadDirNameEl = document.getElementById("download-dir-name");
 var activityCountEl = document.getElementById("activity-count");
 var themeButtons = Array.from(document.querySelectorAll("[data-theme-mode]"));
 var clearActivityBtn = document.getElementById("clear-extension-activity");
 var desktopSettingsBtn = document.getElementById("open-desktop-settings");
 var desktopDownloadsBtn = document.getElementById("open-desktop-downloads");
-var backToPopupBtn = document.getElementById("back-to-popup");
+var closeSettingsBtn = document.getElementById("close-settings");
+var feedbackEl = document.getElementById("settings-feedback");
 
 var state = {
   themeMode: "system",
-  healthOnline: false,
+  feedbackTimer: null,
+  healthRefreshTimer: null,
 };
 
 function getStorage() {
   return globalThis.chrome && globalThis.chrome.storage && globalThis.chrome.storage.local;
+}
+
+function formatThemeMode(themeMode) {
+  var value = themeMode || "system";
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function formatDownloadButtonLabel(downloadDirName) {
+  if (!downloadDirName) return "Open downloads folder";
+  return "Open " + downloadDirName + " folder";
 }
 
 function getResolvedTheme(themeMode) {
@@ -30,23 +47,56 @@ function getResolvedTheme(themeMode) {
   return systemThemeQuery && systemThemeQuery.matches ? "dark" : "light";
 }
 
+function setFeedback(message, tone) {
+  if (!feedbackEl) return;
+
+  if (state.feedbackTimer) {
+    clearTimeout(state.feedbackTimer);
+    state.feedbackTimer = null;
+  }
+
+  if (!message) {
+    feedbackEl.hidden = true;
+    feedbackEl.textContent = "";
+    feedbackEl.removeAttribute("data-tone");
+    return;
+  }
+
+  feedbackEl.hidden = false;
+  feedbackEl.textContent = message;
+  feedbackEl.setAttribute("data-tone", tone || "info");
+
+  state.feedbackTimer = setTimeout(function() {
+    feedbackEl.hidden = true;
+    feedbackEl.textContent = "";
+    feedbackEl.removeAttribute("data-tone");
+    state.feedbackTimer = null;
+  }, FEEDBACK_HIDE_MS);
+}
+
 function syncThemeButtons() {
   themeButtons.forEach(function(button) {
     var active = button.dataset.themeMode === state.themeMode;
     button.classList.toggle("is-active", active);
     button.setAttribute("aria-pressed", active ? "true" : "false");
   });
+
   if (currentThemeModeEl) {
-    currentThemeModeEl.textContent = state.themeMode.charAt(0).toUpperCase() + state.themeMode.slice(1);
+    currentThemeModeEl.textContent = formatThemeMode(state.themeMode);
   }
 }
 
 function applyThemeMode(themeMode) {
   var nextMode = themeMode === "light" || themeMode === "dark" ? themeMode : "system";
+  var resolvedTheme = getResolvedTheme(nextMode);
   state.themeMode = nextMode;
+  if (document.documentElement) {
+    document.documentElement.setAttribute("data-theme-mode", nextMode);
+    document.documentElement.setAttribute("data-theme", resolvedTheme);
+  }
   if (document.body) {
     document.body.setAttribute("data-theme-mode", nextMode);
-    document.body.setAttribute("data-theme", getResolvedTheme(nextMode));
+    document.body.setAttribute("data-theme", resolvedTheme);
   }
   syncThemeButtons();
 }
@@ -74,7 +124,10 @@ function saveThemeMode(themeMode) {
 
 function loadActivityCount() {
   var storage = getStorage();
-  if (!storage || !storage.get) return Promise.resolve();
+  if (!storage || !storage.get) {
+    if (activityCountEl) activityCountEl.textContent = "0 items";
+    return Promise.resolve();
+  }
   return storage.get(ACTIVITY_KEY).then(function(data) {
     var items = Array.isArray(data && data[ACTIVITY_KEY]) ? data[ACTIVITY_KEY] : [];
     if (activityCountEl) {
@@ -90,25 +143,49 @@ function clearActivity() {
   if (!storage || !storage.set) return Promise.resolve();
   var payload = {};
   payload[ACTIVITY_KEY] = [];
-  return storage.set(payload).then(loadActivityCount).catch(function() {});
+  return storage.set(payload).then(function() {
+    return loadActivityCount().then(function() {
+      setFeedback("Extension activity cleared.", "success");
+    });
+  }).catch(function() {
+    setFeedback("Could not clear extension activity.", "error");
+  });
 }
 
-function updateHealthState(online, version) {
-  state.healthOnline = !!online;
+function writeValue(element, value) {
+  if (!element) return;
+  element.textContent = value || "—";
+}
+
+function updateHealthState(health) {
+  var online = Boolean(health);
+  var downloadDirName = health && health.download_dir_name ? health.download_dir_name : "";
+
   if (statusEl) {
-    statusEl.className = "health-pill " + (online ? "online" : "offline");
+    statusEl.className = "pill " + (online ? "pill-live" : "pill-error");
     statusEl.textContent = online ? "Island online" : "Island offline";
   }
+
   if (desktopLinkStateEl) {
-    desktopLinkStateEl.textContent = online ? ("Connected" + (version ? " (" + version + ")" : "")) : "Not reachable";
+    desktopLinkStateEl.textContent = online ? "Connected" : "Offline";
+  }
+
+  writeValue(islandVersionEl, health && health.version ? health.version : "—");
+  writeValue(islandPortEl, health && health.port ? String(health.port) : "—");
+  writeValue(downloadDirNameEl, downloadDirName || "—");
+
+  if (desktopDownloadsBtn) {
+    desktopDownloadsBtn.textContent = formatDownloadButtonLabel(downloadDirName);
   }
 }
 
 function checkDesktopHealth() {
   return checkHealth().then(function(health) {
-    updateHealthState(true, health && health.version ? health.version : "");
+    updateHealthState(health);
+    return health;
   }).catch(function() {
-    updateHealthState(false, "");
+    updateHealthState(null);
+    return null;
   });
 }
 
@@ -121,12 +198,57 @@ function initMeta() {
 }
 
 function openPopupFallback() {
-  var runtime = globalThis.chrome && globalThis.chrome.runtime;
-  var tabs = globalThis.chrome && globalThis.chrome.tabs;
-  if (runtime && typeof runtime.getURL === "function" && tabs && typeof tabs.create === "function") {
-    return tabs.create({ url: runtime.getURL("popup.html") }).catch(function() {});
+  if (history.length > 1) {
+    history.back();
+    return Promise.resolve();
   }
+
+  try {
+    globalThis.close();
+    return Promise.resolve();
+  } catch (_) {}
+
   return Promise.resolve();
+}
+
+function setButtonBusy(button, busy) {
+  if (!button) return;
+  button.disabled = Boolean(busy);
+}
+
+function runDesktopAction(button, action, successMessage, failureMessage) {
+  setButtonBusy(button, true);
+  return action().then(function(result) {
+    if (result && result.ok === false) {
+      setFeedback(result.error || failureMessage, "error");
+      return null;
+    }
+    setFeedback(successMessage, "success");
+    return checkDesktopHealth();
+  }).catch(function() {
+    setFeedback(failureMessage, "error");
+    return null;
+  }).finally(function() {
+    setButtonBusy(button, false);
+  });
+}
+
+function handleSystemThemeChange() {
+  if (state.themeMode === "system") {
+    applyThemeMode("system");
+  }
+}
+
+function handleStorageChange(changes, areaName) {
+  if (areaName !== "local" || !changes) return;
+
+  if (changes[THEME_STORAGE_KEY]) {
+    applyThemeMode(changes[THEME_STORAGE_KEY].newValue || "system");
+  }
+
+  if (changes[ACTIVITY_KEY]) {
+    loadActivityCount();
+  }
 }
 
 function bindEvents() {
@@ -134,7 +256,9 @@ function bindEvents() {
     button.addEventListener("click", function() {
       var nextMode = button.dataset.themeMode || "system";
       applyThemeMode(nextMode);
-      saveThemeMode(nextMode);
+      saveThemeMode(nextMode).then(function() {
+        setFeedback("Theme updated to " + formatThemeMode(nextMode) + ".", "success");
+      });
     });
   });
 
@@ -146,40 +270,64 @@ function bindEvents() {
 
   if (desktopSettingsBtn) {
     desktopSettingsBtn.addEventListener("click", function() {
-      openSettings();
+      runDesktopAction(
+        desktopSettingsBtn,
+        openSettings,
+        "Opened Island settings.",
+        "Could not open Island settings."
+      );
     });
   }
 
   if (desktopDownloadsBtn) {
     desktopDownloadsBtn.addEventListener("click", function() {
-      openDownloads();
+      runDesktopAction(
+        desktopDownloadsBtn,
+        openDownloads,
+        "Opened downloads folder.",
+        "Could not open downloads folder."
+      );
     });
   }
 
-  if (backToPopupBtn) {
-    backToPopupBtn.addEventListener("click", function() {
+  if (closeSettingsBtn) {
+    closeSettingsBtn.addEventListener("click", function() {
       openPopupFallback();
     });
   }
 
   if (systemThemeQuery) {
     if (typeof systemThemeQuery.addEventListener === "function") {
-      systemThemeQuery.addEventListener("change", function() {
-        if (state.themeMode === "system") applyThemeMode("system");
-      });
+      systemThemeQuery.addEventListener("change", handleSystemThemeChange);
     } else if (typeof systemThemeQuery.addListener === "function") {
-      systemThemeQuery.addListener(function() {
-        if (state.themeMode === "system") applyThemeMode("system");
-      });
+      systemThemeQuery.addListener(handleSystemThemeChange);
     }
   }
+
+  var storageApi = globalThis.chrome && globalThis.chrome.storage;
+  if (storageApi && storageApi.onChanged && typeof storageApi.onChanged.addListener === "function") {
+    storageApi.onChanged.addListener(handleStorageChange);
+  }
+
+  document.addEventListener("visibilitychange", function() {
+    if (document.visibilityState === "visible") {
+      checkDesktopHealth();
+      loadActivityCount();
+    }
+  });
+}
+
+function startHealthRefreshLoop() {
+  if (state.healthRefreshTimer) clearInterval(state.healthRefreshTimer);
+  state.healthRefreshTimer = setInterval(checkDesktopHealth, HEALTH_REFRESH_MS);
 }
 
 Promise.all([
   loadThemeMode(),
   loadActivityCount(),
-  checkDesktopHealth()
+  checkDesktopHealth(),
 ]).finally(function() {
   initMeta();
   bindEvents();
+  startHealthRefreshLoop();
 });

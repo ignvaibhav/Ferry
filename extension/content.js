@@ -62,6 +62,7 @@ let injectionWatchdogTimer = null;
 let injectionWatchdogTicks = 0;
 let injectionLoopActive = false;
 let prefetchTimer = null;
+let lastInjectedVideoId = "";
 
 // ---------------------------------------------------------------------------
 // YouTube Helpers
@@ -176,11 +177,28 @@ function setFormatInteractionDisabled(panel, disabled) {
 function buildFormatOptionLabel(format, mode) {
   const parts = [];
   const ext = (format.format || (mode === "audio" ? "mp3" : "mp4")).toUpperCase();
+  const bitrateText = typeof format.quality === "string" && /\d+\s*kbps/i.test(format.quality)
+    ? format.quality.replace(/kbps/i, "kbps").replace(/\s+/g, "")
+    : "";
+  const dimensionText = format.width && format.height ? `${format.width} × ${format.height}` : "";
   const heightText = format.height ? `${format.height}p` : "";
   const sizeText = formatBytes(format.filesize);
-  if (format.quality === "best") parts.push("Best", ext);
-  else if (ext) parts.push(ext);
-  if (heightText) parts.push(heightText);
+
+  if (mode === "audio") {
+    if (bitrateText) parts.push(bitrateText.toUpperCase());
+    if (ext) parts.push(ext);
+  } else if (mode === "thumbnail") {
+    if (dimensionText) parts.push(dimensionText);
+    else if (typeof format.quality === "string" && /\d+x\d+/i.test(format.quality)) {
+      parts.push(format.quality.replace("x", " × "));
+    }
+    if (ext) parts.push(ext);
+  } else {
+    if (format.quality === "best") parts.push("Best", ext);
+    else if (ext) parts.push(ext);
+    if (heightText) parts.push(heightText);
+  }
+
   if (sizeText) parts.push(sizeText);
   return parts.join(" • ") || format.label || "Best available";
 }
@@ -408,9 +426,14 @@ function createPanel() {
       <select class="ferry-quality-select" data-ferry="video-quality-select"></select>
       
       <details class="ferry-clip-details" style="margin-top: 8px;">
-        <summary class="ferry-section-label" style="cursor: pointer; display: flex; align-items: center; gap: 4px; list-style: none;">
-          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
-          <p>Configure Clip<p>
+        <summary class="ferry-clip-toggle">
+          <span class="ferry-clip-toggle-main">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+            <span class="ferry-clip-toggle-label">Configure Clip</span>
+          </span>
+          <span class="ferry-clip-toggle-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </span>
         </summary>
         <div class="ferry-clip-grid" style="margin-top: 8px;">
           <div class="ferry-clip-card">
@@ -443,9 +466,14 @@ function createPanel() {
       <select class="ferry-quality-select" data-ferry="audio-quality-select"></select>
       
       <details class="ferry-clip-details" style="margin-top: 8px;">
-        <summary class="ferry-section-label" style="cursor: pointer; display: flex; align-items: center; gap: 4px; list-style: none;">
-          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
-          Configure Clip
+        <summary class="ferry-clip-toggle">
+          <span class="ferry-clip-toggle-main">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+            <span class="ferry-clip-toggle-label">Configure Clip</span>
+          </span>
+          <span class="ferry-clip-toggle-chevron" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </span>
         </summary>
         <div class="ferry-clip-grid" style="margin-top: 8px;">
           <div class="ferry-clip-card">
@@ -587,12 +615,16 @@ async function handleDownloadClick(panel) {
       type: "TRACK_JOB",
       jobId: activeJobId,
       title: payload.title || "Video",
-      meta: { 
-        mediaType: mode, 
-        qualityLabel: mode === "thumbnail" ? (format?.quality || "Best") : (format?.height ? `${format.height}p` : "Best"), 
-        formatLabel: payload.format.toUpperCase() 
-      }
-    });
+        meta: { 
+          mediaType: mode, 
+          qualityLabel: mode === "thumbnail"
+            ? ((format?.width && format?.height) ? `${format.width}×${format.height}` : (format?.quality || "Best"))
+            : mode === "audio"
+              ? (format?.quality || format?.label || "Best")
+              : (format?.height ? `${format.height}p` : "Best"), 
+          formatLabel: payload.format.toUpperCase() 
+        }
+      });
   } catch (error) {
     setStatus(panel, error.message, false, true);
   }
@@ -655,9 +687,38 @@ function setButtonActiveState(active) {
 }
 
 function findActionBar() {
-  const selectors = ["#top-level-buttons-computed", "#menu #top-level-buttons-computed", "ytd-watch-metadata #top-level-buttons-computed", "#actions #top-level-buttons-computed", "ytd-menu-renderer #top-level-buttons-computed", "#actions-inner #top-level-buttons-computed"];
+  const selectors = [
+    "#top-level-buttons-computed",
+    "#menu #top-level-buttons-computed",
+    "ytd-watch-metadata #top-level-buttons-computed",
+    "#actions #top-level-buttons-computed",
+    "ytd-menu-renderer #top-level-buttons-computed",
+    "#actions-inner #top-level-buttons-computed",
+    "ytd-watch-metadata #actions-inner",
+    "#actions-inner",
+    "ytd-watch-metadata #menu",
+    "#menu",
+    "ytd-watch-metadata #actions",
+    "#actions",
+  ];
   for (const s of selectors) { const n = document.querySelector(s); if (n?.isConnected && isWatchPage()) return n; }
   return null;
+}
+
+function teardownInjectedUi() {
+  const panel = document.getElementById(PANEL_ID);
+  if (panel) panel.remove();
+
+  const wrapper = document.getElementById(WRAPPER_ID);
+  if (wrapper) wrapper.remove();
+
+  const button = document.getElementById(BUTTON_ID);
+  if (button) button.remove();
+
+  setButtonActiveState(false);
+  stopStatusPolling();
+  activeJobId = null;
+  lastInjectedVideoId = "";
 }
 
 function createButton() {
@@ -706,12 +767,67 @@ function createButton() {
 }
 
 function inject() {
-  if (!isWatchPage()) return;
+  if (!isWatchPage()) return false;
   const bar = findActionBar();
-  if (!bar || document.getElementById(BUTTON_ID)) return;
+  if (!bar) return false;
+
+  const context = getVideoContext();
+  const currentVideoId = context.videoId || window.location.href;
+  if (lastInjectedVideoId && lastInjectedVideoId !== currentVideoId) {
+    teardownInjectedUi();
+  }
+
+  if (document.getElementById(BUTTON_ID)) return true;
   ensureDropdownHostStyles(bar);
   const wrap = document.createElement("div"); wrap.id = WRAPPER_ID; wrap.className = "ferry-button-anchor";
   bar.prepend(wrap); wrap.appendChild(createButton());
+  lastInjectedVideoId = currentVideoId;
+  return true;
+}
+
+function stopInjectionLoop() {
+  if (injectTimer) {
+    clearTimeout(injectTimer);
+    injectTimer = null;
+  }
+  if (injectionWatchdogTimer) {
+    clearTimeout(injectionWatchdogTimer);
+    injectionWatchdogTimer = null;
+  }
+  injectionLoopActive = false;
+  injectionWatchdogTicks = 0;
+}
+
+function runInjectionLoop() {
+  if (!isWatchPage()) {
+    stopInjectionLoop();
+    teardownInjectedUi();
+    return;
+  }
+
+  if (inject()) {
+    stopInjectionLoop();
+    return;
+  }
+
+  injectionWatchdogTicks += 1;
+  if (injectionWatchdogTicks >= MAX_INJECTION_FRAMES) {
+    stopInjectionLoop();
+    return;
+  }
+
+  injectionWatchdogTimer = setTimeout(runInjectionLoop, 100);
+}
+
+function scheduleInject() {
+  if (injectTimer) clearTimeout(injectTimer);
+  injectTimer = setTimeout(() => {
+    injectTimer = null;
+    if (injectionLoopActive) return;
+    injectionLoopActive = true;
+    injectionWatchdogTicks = 0;
+    runInjectionLoop();
+  }, INJECT_DEBOUNCE_MS);
 }
 
 // ---------------------------------------------------------------------------
@@ -719,10 +835,18 @@ function inject() {
 // ---------------------------------------------------------------------------
 
 ensureWsListener();
-const observer = new MutationObserver(() => { if (isWatchPage()) inject(); });
+const observer = new MutationObserver(() => {
+  if (isWatchPage()) scheduleInject();
+});
 observer.observe(document.documentElement, { childList: true, subtree: true });
-inject();
+scheduleInject();
 
 // SPA navigation handling
-window.addEventListener("yt-navigate-finish", inject);
-window.addEventListener("yt-page-data-updated", inject);
+window.addEventListener("yt-navigate-start", () => {
+  stopInjectionLoop();
+  teardownInjectedUi();
+});
+window.addEventListener("yt-navigate-finish", scheduleInject);
+window.addEventListener("yt-page-data-updated", scheduleInject);
+window.addEventListener("popstate", scheduleInject);
+window.addEventListener("pageshow", scheduleInject);
