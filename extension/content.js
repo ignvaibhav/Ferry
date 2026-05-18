@@ -888,7 +888,7 @@ function createPanel() {
   panel.id = PANEL_ID;
   panel.style.display = "none";
   panel.dataset.ferryMode = "video";
-  const ferryLogoUrl = getExtensionAssetUrl("icons/icon128.png");
+  const ferryLogoUrl = getExtensionAssetUrl("icons/extentionIcon.png");
 
   panel.innerHTML = `
     <div class="ferry-branded-header">

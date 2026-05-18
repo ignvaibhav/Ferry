@@ -408,7 +408,7 @@
 
 .ferry-audio-select:focus {
   outline: none;
-  border-color: var(--yt-spec-call-to-action, rgba(62, 166, 255, 0.45));
+  border-color: var(--yt-spec-call-to-action, rgba(181, 242, 61, 0.45));
   background-color: var(--yt-spec-10-percent-layer, rgba(255, 255, 255, 0.06));
 }
 
@@ -477,7 +477,7 @@
 .ferry-clip-fill {
   position: absolute;
   height: 3px;
-  background: var(--yt-spec-brand-button-background, #3ea6ff);
+  background: var(--yt-spec-brand-button-background, #B5F23D);
   border-radius: 999px;
   left: 0;
   width: 100%;
@@ -529,7 +529,7 @@
   min-height: 42px;
   border: none;
   border-radius: 999px;
-  background: var(--yt-spec-call-to-action, #3ea6ff);
+  background: var(--yt-spec-call-to-action, #B5F23D);
   color: var(--yt-spec-text-primary-inverse, #0f0f0f);
   font-family: "Roboto", "Arial", sans-serif;
   font-size: 14px;
