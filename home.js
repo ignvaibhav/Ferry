@@ -51,9 +51,10 @@ function getAssetForOS(assets, os) {
 }
 
 function getOSLabel(os) {
+  const betaBadge = `<span style="font-size: 9px; background: rgba(255, 255, 255, 0.15); color: #fff; padding: 2px 5px; border-radius: 4px; margin-left: 6px; vertical-align: middle; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 800;">BETA</span>`;
   if (os === "mac") return { label: "Download for macOS", icon: "" };
-  if (os === "windows") return { label: "Download for Windows", icon: "🪟" };
-  if (os === "linux") return { label: "Download for Linux", icon: "🐧" };
+  if (os === "windows") return { label: `Download for Windows ${betaBadge}`, icon: "🪟" };
+  if (os === "linux") return { label: `Download for Linux ${betaBadge}`, icon: "🐧" };
   return { label: "Download", icon: "⬇" };
 }
 
@@ -87,7 +88,8 @@ async function syncLatestRelease() {
       link.innerHTML = `<span class="btn-icon">${icon || "⬇"}</span> ${label}`;
     }
     if (link.tagName === "A" && link.classList.contains("nav-cta")) {
-      link.textContent = `↓ ${os !== "unknown" ? label.replace("Download for ", "") : "Download"}`;
+      const shortLabel = os !== "unknown" ? label.replace("Download for ", "") : "Download";
+      link.innerHTML = `↓ ${shortLabel}`;
     }
   });
 
