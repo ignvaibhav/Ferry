@@ -87,10 +87,6 @@ async function syncLatestRelease() {
     if (link.tagName === "A" && link.classList.contains("btn-primary")) {
       link.innerHTML = `<span class="btn-icon">${icon || "⬇"}</span> ${label}`;
     }
-    if (link.tagName === "A" && link.classList.contains("nav-cta")) {
-      const shortLabel = os !== "unknown" ? label.replace("Download for ", "") : "Download";
-      link.innerHTML = `↓ ${shortLabel}`;
-    }
   });
 
   updatePlatformPills(os);
