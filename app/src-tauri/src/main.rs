@@ -295,10 +295,22 @@ fn main() {
             browse_download_directory,
             open_external_url
         ])
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            Some(vec!["--hidden"]),
-        ));
+        .plugin({
+            // MacosLauncher::LaunchAgent is a macOS-only concept; on other platforms
+            // the autostart plugin accepts a plain unit type — guard it here so the
+            // binary compiles on Windows and Linux without changes.
+            #[cfg(target_os = "macos")]
+            {
+                tauri_plugin_autostart::init(
+                    tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                    Some(vec!["--hidden"]),
+                )
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None)
+            }
+        });
 
     #[cfg(target_os = "macos")]
     {
