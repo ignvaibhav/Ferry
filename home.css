@@ -994,6 +994,12 @@ section {
   background: var(--accent-dim);
   color: var(--accent);
 }
+.platform-beta {
+  border-color: rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.03);
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
 .platform-dot {
   width: 5px;
   height: 5px;
