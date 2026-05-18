@@ -271,8 +271,6 @@ fn build_download_command(
         .arg("--no-warnings")
         .arg("--no-overwrites")
         .arg("--no-post-overwrites")
-        .arg("--progress-template")
-        .arg("[download] %(progress._percent_str)s at %(progress._speed_str)s ETA %(progress._eta_str)s")
         .arg("--force-ipv4")
         .arg("--retries")
         .arg("10")

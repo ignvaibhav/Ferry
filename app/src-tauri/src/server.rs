@@ -57,6 +57,7 @@ pub async fn run(
         .route("/formats", post(formats_endpoint))
         .route("/download", post(download))
         .route("/reveal", post(reveal))
+        .route("/open", post(open_file))
         .route("/status/{job_id}", get(status))
         .route("/jobs/{job_id}/cancel", post(cancel_job))
         .route("/jobs/{job_id}/skip", post(skip_job))
@@ -230,6 +231,39 @@ async fn reveal(Json(payload): Json<RevealRequest>) -> Result<Json<serde_json::V
         ))),
         Err(error) => Err(AppError::BadGateway(format!(
             "failed to start reveal command: {error}"
+        ))),
+    }
+}
+
+async fn open_file(Json(payload): Json<RevealRequest>) -> Result<Json<serde_json::Value>, AppError> {
+    let input = payload.path.trim();
+    if input.is_empty() {
+        return Err(AppError::BadRequest("path is required".to_string()));
+    }
+
+    let target = PathBuf::from(input);
+    if !target.exists() {
+        return Err(AppError::NotFound(format!(
+            "path does not exist: {}",
+            target.display()
+        )));
+    }
+
+    let result = if cfg!(target_os = "windows") {
+        StdCommand::new("cmd").arg("/C").arg("start").arg("").arg(&target).status()
+    } else if cfg!(target_os = "macos") {
+        StdCommand::new("open").arg(&target).status()
+    } else {
+        StdCommand::new("xdg-open").arg(&target).status()
+    };
+
+    match result {
+        Ok(exit) if exit.success() => Ok(Json(serde_json::json!({ "ok": true }))),
+        Ok(exit) => Err(AppError::BadGateway(format!(
+            "open command failed: {exit}"
+        ))),
+        Err(error) => Err(AppError::BadGateway(format!(
+            "failed to start open command: {error}"
         ))),
     }
 }

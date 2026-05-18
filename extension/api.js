@@ -98,6 +98,11 @@ export function revealPath(path) {
   return postLocalAction("/reveal", { path: path }, "Failed to reveal path");
 }
 
+export function openPath(path) {
+  if (!path) return Promise.resolve();
+  return postLocalAction("/open", { path: path }, "Failed to open file");
+}
+
 export function cancelJob(jobId) {
   if (!jobId) return Promise.resolve();
   return postLocalAction("/jobs/" + encodeURIComponent(jobId) + "/cancel", {}, "Failed to cancel job");

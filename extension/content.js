@@ -63,6 +63,8 @@ let injectionWatchdogTicks = 0;
 let injectionLoopActive = false;
 let prefetchTimer = null;
 let lastInjectedVideoId = "";
+let lastKnownWatchUrl = window.location.href;
+let historyHooksInstalled = false;
 
 // ---------------------------------------------------------------------------
 // YouTube Helpers
@@ -77,12 +79,37 @@ function isWatchPage() {
 
 function getVideoContext() {
   const videoId = new URLSearchParams(window.location.search).get("v");
+  let pageThumbnail = null;
+  if (videoId) {
+    pageThumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+  } else {
+    pageThumbnail =
+      document.querySelector('meta[property="og:image"]')?.getAttribute("content") ||
+      document.querySelector('link[itemprop="thumbnailUrl"]')?.getAttribute("href") ||
+      document.querySelector('meta[name="twitter:image"]')?.getAttribute("content");
+  }
   return {
     url: window.location.href,
     videoId: videoId,
     title: document.querySelector("h1.ytd-watch-metadata")?.textContent?.trim() || document.title,
-    thumbnailUrl: videoId ? `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg` : null,
+    thumbnailUrl: pageThumbnail,
   };
+}
+
+function getWatchPageKey() {
+  if (!isWatchPage()) return "";
+  const context = getVideoContext();
+  return context.videoId || context.url;
+}
+
+function isElementVisible(node) {
+  if (!(node instanceof Element)) return false;
+  const style = window.getComputedStyle(node);
+  if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") {
+    return false;
+  }
+  const rect = node.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
 }
 
 function getPlayerDurationSeconds() {
@@ -165,7 +192,8 @@ function resetProgressBox(panel) {
 function setFormatInteractionDisabled(panel, disabled) {
   const dlBtn = panel.querySelector('[data-ferry="download-btn"]');
   if (dlBtn) dlBtn.disabled = Boolean(disabled);
-  panel.querySelectorAll(".ferry-quality-item").forEach(item => {
+  panel.querySelectorAll(".ferry-quality-trigger, .ferry-quality-option").forEach((item) => {
+    item.disabled = Boolean(disabled);
     item.classList.toggle("is-disabled", Boolean(disabled));
   });
 }
@@ -175,38 +203,193 @@ function setFormatInteractionDisabled(panel, disabled) {
 // ---------------------------------------------------------------------------
 
 function buildFormatOptionLabel(format, mode) {
-  const parts = [];
-  const ext = (format.format || (mode === "audio" ? "mp3" : "mp4")).toUpperCase();
-  const bitrateText = typeof format.quality === "string" && /\d+\s*kbps/i.test(format.quality)
-    ? format.quality.replace(/kbps/i, "kbps").replace(/\s+/g, "")
-    : "";
-  const dimensionText = format.width && format.height ? `${format.width} × ${format.height}` : "";
-  const heightText = format.height ? `${format.height}p` : "";
-  const sizeText = formatBytes(format.filesize);
+  return getFormatPresentation(format, mode).title;
+}
+
+function getAudioBitrateText(format) {
+  const source = [format?.quality, format?.label, format?.note].find((value) => typeof value === "string") || "";
+  const match = source.match(/(\d+)\s*kbps/i);
+  return match ? `${match[1]} kbps` : "";
+}
+
+function getThumbnailDimensionText(format) {
+  if (format?.width && format?.height) {
+    return `${format.width} × ${format.height}`;
+  }
+  if (typeof format?.quality === "string" && /\d+x\d+/i.test(format.quality)) {
+    return format.quality.replace(/x/i, " × ");
+  }
+  return "";
+}
+
+function getFormatPresentation(format, mode) {
+  const ext = (format?.format || (mode === "audio" ? "mp3" : mode === "thumbnail" ? "jpg" : "mp4")).toUpperCase();
+  const sizeText = formatBytes(format?.filesize);
 
   if (mode === "audio") {
-    if (bitrateText) parts.push(bitrateText.toUpperCase());
-    if (ext) parts.push(ext);
-  } else if (mode === "thumbnail") {
-    if (dimensionText) parts.push(dimensionText);
-    else if (typeof format.quality === "string" && /\d+x\d+/i.test(format.quality)) {
-      parts.push(format.quality.replace("x", " × "));
-    }
-    if (ext) parts.push(ext);
-  } else {
-    if (format.quality === "best") parts.push("Best", ext);
-    else if (ext) parts.push(ext);
-    if (heightText) parts.push(heightText);
+    const bitrate = getAudioBitrateText(format) || "Audio";
+    return {
+      title: [ext, bitrate, sizeText].filter(Boolean).join(" · "),
+      meta: "",
+    };
   }
 
-  if (sizeText) parts.push(sizeText);
-  return parts.join(" • ") || format.label || "Best available";
+  if (mode === "thumbnail") {
+    const dimensions = getThumbnailDimensionText(format) || format?.label || "Best thumbnail";
+    return {
+      title: [ext, dimensions, sizeText].filter(Boolean).join(" · "),
+      meta: "",
+    };
+  }
+
+  const quality = format?.height ? `${format.height}p` : (format?.label || "Best available");
+  return {
+    title: [ext, quality, sizeText].filter(Boolean).join(" · "),
+    meta: "",
+  };
+}
+
+function getFormatOptionKey(format) {
+  if (!format) return "";
+  return [
+    format.media_type || "",
+    format.format_id || "",
+    format.format || "",
+    format.quality || "",
+    format.height || "",
+    format.width || "",
+    format.filesize || "",
+  ].join("|");
+}
+
+function getModeFormats(formats, mode) {
+  const filtered = formats.filter((f) => {
+    const type = (f.media_type || "").toLowerCase();
+    const fmt = (f.format || "").toLowerCase();
+    if (mode === "audio") return type === "audio" || fmt === "mp3" || f.quality === "audio";
+    if (mode === "thumbnail") return type === "thumbnail" || fmt === "jpg" || fmt === "png" || type.includes("thumb");
+    return type === "video" || (!type && fmt !== "mp3" && fmt !== "jpg");
+  });
+
+  if (mode === "thumbnail" && !filtered.length) {
+    return [{ label: "Best JPG", quality: "best", format: "jpg" }];
+  }
+
+  return filtered;
+}
+
+function areSameFormatOption(left, right) {
+  if (!left || !right) return false;
+  return (
+    (left.format_id && right.format_id && left.format_id === right.format_id) ||
+    (left.media_type === right.media_type &&
+      left.format === right.format &&
+      left.quality === right.quality &&
+      left.height === right.height &&
+      left.width === right.width)
+  );
+}
+
+function closeQualityMenus(panel, exceptMode = null) {
+  panel.querySelectorAll("[data-ferry-quality-dropdown]").forEach((dropdown) => {
+    const mode = dropdown.dataset.ferryQualityDropdown;
+    const menu = dropdown.querySelector(".ferry-quality-menu");
+    const trigger = dropdown.querySelector(".ferry-quality-trigger");
+    const keepOpen = Boolean(exceptMode && mode === exceptMode);
+    if (!keepOpen && menu) menu.hidden = true;
+    if (trigger) trigger.setAttribute("aria-expanded", keepOpen && menu ? String(!menu.hidden) : "false");
+  });
+}
+
+function setSelectedQuality(panel, mode, format) {
+  if (!prefetchState.selectedFormats) prefetchState.selectedFormats = {};
+  prefetchState.selectedFormats[mode] = format;
+
+  const dropdown = panel.querySelector(`[data-ferry-quality-dropdown="${mode}"]`);
+  if (!dropdown) return;
+
+  const triggerTitle = dropdown.querySelector("[data-ferry-quality-trigger-title]");
+  const triggerMeta = dropdown.querySelector("[data-ferry-quality-trigger-meta]");
+  const presentation = getFormatPresentation(format, mode);
+
+  if (triggerTitle) triggerTitle.textContent = presentation.title;
+  if (triggerMeta) triggerMeta.textContent = presentation.meta;
+
+  const selectedKey = getFormatOptionKey(format);
+  dropdown.querySelectorAll(".ferry-quality-option").forEach((option) => {
+    option.classList.toggle("is-selected", option.dataset.ferryOptionKey === selectedKey);
+  });
+
+  updateDownloadButtonLabel(panel);
+}
+
+function renderQualityDropdown(panel, mode, formats, loading = false) {
+  const dropdown = panel.querySelector(`[data-ferry-quality-dropdown="${mode}"]`);
+  if (!dropdown) return;
+
+  const trigger = dropdown.querySelector(".ferry-quality-trigger");
+  const triggerTitle = dropdown.querySelector("[data-ferry-quality-trigger-title]");
+  const triggerMeta = dropdown.querySelector("[data-ferry-quality-trigger-meta]");
+  const menu = dropdown.querySelector(".ferry-quality-menu");
+
+  if (!trigger || !triggerTitle || !triggerMeta || !menu) return;
+
+  menu.innerHTML = "";
+  menu.hidden = true;
+  trigger.setAttribute("aria-expanded", "false");
+
+  if (loading) {
+    trigger.disabled = true;
+    triggerTitle.textContent = "Loading…";
+    triggerMeta.textContent = "";
+    return;
+  }
+
+  const displayFormats = getModeFormats(formats, mode);
+  if (!displayFormats.length) {
+    trigger.disabled = true;
+    triggerTitle.textContent = mode === "thumbnail" ? "No thumbnails" : `No ${mode} formats`;
+    triggerMeta.textContent = "";
+    return;
+  }
+
+  trigger.disabled = false;
+  trigger.onclick = (event) => {
+    event.stopPropagation();
+    const willOpen = menu.hidden;
+    closeQualityMenus(panel, willOpen ? mode : null);
+    menu.hidden = !willOpen;
+    trigger.setAttribute("aria-expanded", willOpen ? "true" : "false");
+  };
+  const previousFormat = prefetchState.selectedFormats?.[mode];
+  const selectedFormat = displayFormats.find((format) => areSameFormatOption(format, previousFormat)) || displayFormats[0];
+
+  displayFormats.forEach((format) => {
+    const presentation = getFormatPresentation(format, mode);
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "ferry-quality-option";
+    option.dataset.ferryOptionKey = getFormatOptionKey(format);
+    option.innerHTML = `
+      <span class="ferry-quality-option-copy">
+        <span class="ferry-quality-option-title">${escapeHtml(presentation.title)}</span>
+      </span>
+      <span class="ferry-quality-option-check" aria-hidden="true">●</span>
+    `;
+    option.addEventListener("click", () => {
+      setSelectedQuality(panel, mode, format);
+      closeQualityMenus(panel);
+    });
+    menu.appendChild(option);
+  });
+
+  setSelectedQuality(panel, mode, selectedFormat);
 }
 
 function applyPrefetchStateToPanel(panel) {
   if (prefetchState.loading) {
     setFormatInteractionDisabled(panel, true);
-    setStatus(panel, "Loading qualities...", true, true);
+    setStatus(panel, "", true, false);
     renderFormats(panel, [], true);
     return;
   }
@@ -233,64 +416,15 @@ function applyPrefetchStateToPanel(panel) {
 }
 
 function renderFormats(panel, formats, loading = false) {
-  const selects = {
-    video: panel.querySelector("[data-ferry=video-quality-select]"),
-    audio: panel.querySelector("[data-ferry=audio-quality-select]"),
-    thumbnail: panel.querySelector("[data-ferry=thumbnail-quality-select]"),
-  };
-
   const context = getVideoContext();
   const thumbPreview = panel.querySelector("[data-ferry=thumbnail-preview]");
   if (thumbPreview && context.thumbnailUrl) {
     thumbPreview.src = context.thumbnailUrl;
   }
 
-  for (const [mode, select] of Object.entries(selects)) {
-    if (!select) continue;
-    select.innerHTML = "";
-    if (loading) {
-      const opt = document.createElement("option");
-      opt.textContent = "Loading...";
-      select.appendChild(opt);
-      continue;
-    }
-
-    const filtered = formats.filter(f => {
-      const type = (f.media_type || "").toLowerCase();
-      const fmt = (f.format || "").toLowerCase();
-      if (mode === "audio") return type === "audio" || fmt === "mp3" || f.quality === "audio";
-      if (mode === "thumbnail") return type === "thumbnail" || fmt === "jpg" || fmt === "png" || type.includes("thumb");
-      // For video, include anything that is explicitly video OR lacks a media_type but isn't mp3/jpg
-      return type === "video" || (!type && fmt !== "mp3" && fmt !== "jpg");
-    });
-
-    if (!filtered.length && mode !== "thumbnail") {
-      const opt = document.createElement("option");
-      opt.textContent = `No ${mode} formats`;
-      select.appendChild(opt);
-      continue;
-    }
-
-    const displayFormats = (mode === "thumbnail" && !filtered.length) ? [{ label: "Best JPG", quality: "best", format: "jpg" }] : filtered;
-
-    displayFormats.forEach((format, index) => {
-      const opt = document.createElement("option");
-      opt.value = JSON.stringify(format);
-      opt.textContent = buildFormatOptionLabel(format, mode).replace(/ • /g, " · ");
-      if (index === 0) {
-        if (!prefetchState.selectedFormats) prefetchState.selectedFormats = {};
-        prefetchState.selectedFormats[mode] = format;
-      }
-      select.appendChild(opt);
-    });
-
-    select.onchange = () => {
-      try {
-        prefetchState.selectedFormats[mode] = JSON.parse(select.value);
-        updateDownloadButtonLabel(panel);
-      } catch (e) {}
-    };
-  }
+  ["video", "audio", "thumbnail"].forEach((mode) => {
+    renderQualityDropdown(panel, mode, formats, loading);
+  });
   updateDownloadButtonLabel(panel);
 }
 
@@ -391,7 +525,7 @@ function createPanel() {
   panel.style.display = "none";
   panel.dataset.ferryMode = "video";
 
-  const iconUrl = getExtensionAssetUrl("icons/icon128.png");
+  const iconUrl = getExtensionAssetUrl("icons/extentionIcon.png");
 
   panel.innerHTML = `
     <div class="ferry-branded-header">
@@ -423,7 +557,16 @@ function createPanel() {
 
     <section class="ferry-mode-section" data-ferry-section="video">
       <div class="ferry-section-label">Quality</div>
-      <select class="ferry-quality-select" data-ferry="video-quality-select"></select>
+      <div class="ferry-quality-dropdown" data-ferry-quality-dropdown="video">
+        <button type="button" class="ferry-quality-trigger" aria-expanded="false">
+          <span class="ferry-quality-trigger-copy">
+            <span class="ferry-quality-trigger-title" data-ferry-quality-trigger-title>Select quality</span>
+            <span class="ferry-quality-trigger-meta" data-ferry-quality-trigger-meta></span>
+          </span>
+          <span class="ferry-quality-trigger-chevron" aria-hidden="true">⌄</span>
+        </button>
+        <div class="ferry-quality-menu" hidden></div>
+      </div>
       
       <details class="ferry-clip-details" style="margin-top: 8px;">
         <summary class="ferry-clip-toggle">
@@ -451,11 +594,11 @@ function createPanel() {
             </div>
           </div>
         </div>
-        <div style="margin-top: 12px; padding: 0 4px;">
-          <div data-ferry="video-clip-track" style="height: 4px; background: var(--f-surface3); border-radius: 2px; position: relative;">
-            <div data-ferry="video-clip-fill" style="position: absolute; height: 100%; background: var(--f-accent); border-radius: 2px;"></div>
-            <button type="button" data-ferry="video-clip-start-thumb" style="position: absolute; width: 12px; height: 12px; border-radius: 50%; background: #fff; border: none; top: 50%; transform: translate(-50%, -50%); cursor: pointer;"></button>
-            <button type="button" data-ferry="video-clip-end-thumb" style="position: absolute; width: 12px; height: 12px; border-radius: 50%; background: #fff; border: none; top: 50%; transform: translate(-50%, -50%); cursor: pointer;"></button>
+        <div class="ferry-clip-track-shell">
+          <div class="ferry-clip-track" data-ferry="video-clip-track">
+            <div class="ferry-clip-fill" data-ferry="video-clip-fill"></div>
+            <button type="button" class="ferry-clip-thumb" data-ferry="video-clip-start-thumb"></button>
+            <button type="button" class="ferry-clip-thumb" data-ferry="video-clip-end-thumb"></button>
           </div>
         </div>
       </details>
@@ -463,7 +606,16 @@ function createPanel() {
 
     <section class="ferry-mode-section" data-ferry-section="audio" hidden>
       <div class="ferry-section-label">Bitrate</div>
-      <select class="ferry-quality-select" data-ferry="audio-quality-select"></select>
+      <div class="ferry-quality-dropdown" data-ferry-quality-dropdown="audio">
+        <button type="button" class="ferry-quality-trigger" aria-expanded="false">
+          <span class="ferry-quality-trigger-copy">
+            <span class="ferry-quality-trigger-title" data-ferry-quality-trigger-title>Select bitrate</span>
+            <span class="ferry-quality-trigger-meta" data-ferry-quality-trigger-meta></span>
+          </span>
+          <span class="ferry-quality-trigger-chevron" aria-hidden="true">⌄</span>
+        </button>
+        <div class="ferry-quality-menu" hidden></div>
+      </div>
       
       <details class="ferry-clip-details" style="margin-top: 8px;">
         <summary class="ferry-clip-toggle">
@@ -491,11 +643,11 @@ function createPanel() {
             </div>
           </div>
         </div>
-        <div style="margin-top: 12px; padding: 0 4px;">
-          <div data-ferry="audio-clip-track" style="height: 4px; background: var(--f-surface3); border-radius: 2px; position: relative;">
-            <div data-ferry="audio-clip-fill" style="position: absolute; height: 100%; background: var(--f-accent); border-radius: 2px;"></div>
-            <button type="button" data-ferry="audio-clip-start-thumb" style="position: absolute; width: 12px; height: 12px; border-radius: 50%; background: #fff; border: none; top: 50%; transform: translate(-50%, -50%); cursor: pointer;"></button>
-            <button type="button" data-ferry="audio-clip-end-thumb" style="position: absolute; width: 12px; height: 12px; border-radius: 50%; background: #fff; border: none; top: 50%; transform: translate(-50%, -50%); cursor: pointer;"></button>
+        <div class="ferry-clip-track-shell">
+          <div class="ferry-clip-track" data-ferry="audio-clip-track">
+            <div class="ferry-clip-fill" data-ferry="audio-clip-fill"></div>
+            <button type="button" class="ferry-clip-thumb" data-ferry="audio-clip-start-thumb"></button>
+            <button type="button" class="ferry-clip-thumb" data-ferry="audio-clip-end-thumb"></button>
           </div>
         </div>
       </details>
@@ -506,8 +658,17 @@ function createPanel() {
       <div class="ferry-thumbnail-preview-container" style="background: var(--f-surface2); border-radius: 8px; overflow: hidden; aspect-ratio: 16/9; margin-bottom: 8px; border: 0.5px solid var(--f-border2);">
         <img data-ferry="thumbnail-preview" src="" alt="" style="width: 100%; height: 100%; object-fit: cover;" />
       </div>
-      <div class="ferry-section-label">Formats</div>
-      <select class="ferry-quality-select" data-ferry="thumbnail-quality-select"></select>
+      <div class="ferry-section-label">Quality</div>
+      <div class="ferry-quality-dropdown" data-ferry-quality-dropdown="thumbnail">
+        <button type="button" class="ferry-quality-trigger" aria-expanded="false">
+          <span class="ferry-quality-trigger-copy">
+            <span class="ferry-quality-trigger-title" data-ferry-quality-trigger-title>Select thumbnail</span>
+            <span class="ferry-quality-trigger-meta" data-ferry-quality-trigger-meta></span>
+          </span>
+          <span class="ferry-quality-trigger-chevron" aria-hidden="true">⌄</span>
+        </button>
+        <div class="ferry-quality-menu" hidden></div>
+      </div>
     </section>
 
     <div class="ferry-progress-box" id="ferry-progress-box" style="display: none;">
@@ -520,6 +681,7 @@ function createPanel() {
   `;
 
   panel.querySelector('[data-ferry="close"]').onclick = () => {
+    closeQualityMenus(panel);
     panel.style.display = "none";
     setButtonActiveState(false);
     resetProgressBox(panel);
@@ -534,15 +696,24 @@ function createPanel() {
 
   window.addEventListener("keydown", (e) => {
     if (panel.style.display === "none") return;
-    if (e.key === "Escape") panel.querySelector('[data-ferry="close"]').click();
+    if (e.key === "Escape") {
+      closeQualityMenus(panel);
+      panel.querySelector('[data-ferry="close"]').click();
+    }
     else if (e.key === "Enter") dlBtn.click();
     else if (["1", "2", "3", "4"].includes(e.key)) {
       const idx = parseInt(e.key) - 1;
-      const list = panel.querySelector(`[data-ferry="${panel.dataset.ferryMode}-quality-select"]`);
-      if (list && list.options[idx]) {
-        list.selectedIndex = idx;
-        list.dispatchEvent(new Event("change"));
+      const menu = panel.querySelector(`[data-ferry-quality-dropdown="${panel.dataset.ferryMode}"] .ferry-quality-menu`);
+      const options = menu ? Array.from(menu.querySelectorAll(".ferry-quality-option")) : [];
+      if (options[idx]) {
+        options[idx].click();
       }
+    }
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!panel.contains(event.target)) {
+      closeQualityMenus(panel);
     }
   });
 
@@ -551,6 +722,7 @@ function createPanel() {
 
 function setPanelMode(panel, mode) {
   const nextMode = ["video", "audio", "thumbnail"].includes(mode) ? mode : "video";
+  closeQualityMenus(panel);
   panel.dataset.ferryMode = nextMode;
   panel.querySelectorAll(".ferry-mode-tab").forEach((tab) => {
     tab.classList.toggle("is-active", tab.dataset.ferryMode === nextMode);
@@ -610,21 +782,19 @@ async function handleDownloadClick(panel) {
     activeJobId = result.job_id;
     setProgress(panel, 0, null, null);
     startStatusPolling(panel, activeJobId);
+    const presentation = getFormatPresentation(format || {}, mode);
     
     await safeSendMessage({
       type: "TRACK_JOB",
       jobId: activeJobId,
       title: payload.title || "Video",
-        meta: { 
-          mediaType: mode, 
-          qualityLabel: mode === "thumbnail"
-            ? ((format?.width && format?.height) ? `${format.width}×${format.height}` : (format?.quality || "Best"))
-            : mode === "audio"
-              ? (format?.quality || format?.label || "Best")
-              : (format?.height ? `${format.height}p` : "Best"), 
-          formatLabel: payload.format.toUpperCase() 
-        }
-      });
+      meta: {
+        mediaType: mode,
+        qualityLabel: presentation.title || "Best",
+        formatLabel: payload.format.toUpperCase(),
+        sourceThumbnailUrl: context.thumbnailUrl || "",
+      }
+    });
   } catch (error) {
     setStatus(panel, error.message, false, true);
   }
@@ -701,7 +871,13 @@ function findActionBar() {
     "ytd-watch-metadata #actions",
     "#actions",
   ];
-  for (const s of selectors) { const n = document.querySelector(s); if (n?.isConnected && isWatchPage()) return n; }
+  for (const s of selectors) {
+    const nodes = Array.from(document.querySelectorAll(s));
+    const visibleNode = nodes.find((node) => node?.isConnected && isElementVisible(node));
+    if (visibleNode && isWatchPage()) return visibleNode;
+    const fallbackNode = nodes.find((node) => node?.isConnected);
+    if (fallbackNode && isWatchPage()) return fallbackNode;
+  }
   return null;
 }
 
@@ -719,6 +895,28 @@ function teardownInjectedUi() {
   stopStatusPolling();
   activeJobId = null;
   lastInjectedVideoId = "";
+}
+
+function hasInjectedButton() {
+  return Boolean(document.getElementById(BUTTON_ID));
+}
+
+function shouldReattachButton(bar) {
+  const wrapper = document.getElementById(WRAPPER_ID);
+  const button = document.getElementById(BUTTON_ID);
+  if (!wrapper || !button) return true;
+  if (!wrapper.isConnected || !button.isConnected) return true;
+  if (wrapper.parentElement !== bar) return true;
+  if (!isElementVisible(bar) || !isElementVisible(wrapper) || !isElementVisible(button)) return true;
+  return false;
+}
+
+function shouldInjectButton() {
+  if (!isWatchPage()) return false;
+  const bar = findActionBar();
+  if (!bar) return false;
+  if (!hasInjectedButton()) return true;
+  return shouldReattachButton(bar);
 }
 
 function createButton() {
@@ -777,7 +975,11 @@ function inject() {
     teardownInjectedUi();
   }
 
-  if (document.getElementById(BUTTON_ID)) return true;
+  if (hasInjectedButton() && shouldReattachButton(bar)) {
+    teardownInjectedUi();
+  }
+
+  if (document.getElementById(BUTTON_ID) && document.getElementById(WRAPPER_ID)?.parentElement === bar) return true;
   ensureDropdownHostStyles(bar);
   const wrap = document.createElement("div"); wrap.id = WRAPPER_ID; wrap.className = "ferry-button-anchor";
   bar.prepend(wrap); wrap.appendChild(createButton());
@@ -823,6 +1025,7 @@ function scheduleInject() {
   if (injectTimer) clearTimeout(injectTimer);
   injectTimer = setTimeout(() => {
     injectTimer = null;
+    if (!shouldInjectButton() && lastInjectedVideoId === getWatchPageKey()) return;
     if (injectionLoopActive) return;
     injectionLoopActive = true;
     injectionWatchdogTicks = 0;
@@ -830,23 +1033,72 @@ function scheduleInject() {
   }, INJECT_DEBOUNCE_MS);
 }
 
+function handlePageStateChange() {
+  const currentUrl = window.location.href;
+  const currentWatchKey = getWatchPageKey();
+  const navigated = currentUrl !== lastKnownWatchUrl;
+  if (navigated) {
+    lastKnownWatchUrl = currentUrl;
+  }
+
+  if (!isWatchPage()) {
+    if (hasInjectedButton() || document.getElementById(PANEL_ID)) {
+      stopInjectionLoop();
+      teardownInjectedUi();
+    }
+    return;
+  }
+
+  if (navigated && lastInjectedVideoId && lastInjectedVideoId !== currentWatchKey) {
+    stopInjectionLoop();
+    teardownInjectedUi();
+  }
+
+  if (shouldInjectButton()) {
+    scheduleInject();
+  }
+}
+
+function installHistoryHooks() {
+  if (historyHooksInstalled) return;
+  historyHooksInstalled = true;
+
+  const wrapHistoryMethod = (methodName) => {
+    const original = window.history?.[methodName];
+    if (typeof original !== "function") return;
+    window.history[methodName] = function wrappedHistoryMethod(...args) {
+      const result = original.apply(this, args);
+      setTimeout(handlePageStateChange, 0);
+      return result;
+    };
+  };
+
+  wrapHistoryMethod("pushState");
+  wrapHistoryMethod("replaceState");
+}
+
 // ---------------------------------------------------------------------------
 // Bootstrap
 // ---------------------------------------------------------------------------
 
 ensureWsListener();
+installHistoryHooks();
 const observer = new MutationObserver(() => {
-  if (isWatchPage()) scheduleInject();
+  handlePageStateChange();
 });
 observer.observe(document.documentElement, { childList: true, subtree: true });
-scheduleInject();
+handlePageStateChange();
 
 // SPA navigation handling
 window.addEventListener("yt-navigate-start", () => {
   stopInjectionLoop();
   teardownInjectedUi();
 });
-window.addEventListener("yt-navigate-finish", scheduleInject);
-window.addEventListener("yt-page-data-updated", scheduleInject);
-window.addEventListener("popstate", scheduleInject);
-window.addEventListener("pageshow", scheduleInject);
+window.addEventListener("yt-navigate-finish", handlePageStateChange);
+window.addEventListener("yt-page-data-updated", handlePageStateChange);
+window.addEventListener("popstate", handlePageStateChange);
+window.addEventListener("pageshow", handlePageStateChange);
+window.addEventListener("load", handlePageStateChange);
+document.addEventListener("readystatechange", handlePageStateChange);
+
+setInterval(handlePageStateChange, 1000);

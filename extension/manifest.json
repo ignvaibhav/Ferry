@@ -23,7 +23,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["icons/icon16.png", "icons/icon48.png", "icons/icon128.png"],
+      "resources": ["icons/icon16.png", "icons/icon48.png", "icons/icon128.png", "icons/extentionIcon.png"],
       "matches": ["https://www.youtube.com/*"]
     }
   ],

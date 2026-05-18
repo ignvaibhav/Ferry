@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ferry — yt-dlp, without the terminal</title>
+<link rel="icon" type="image/png" href="extension/icons/extentionIcon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="home.css">
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a class="nav-logo" href="#">
+    <!-- <div class="nav-logo-mark">F</div> -->
+    <div class="nav-logo-mark"><img src="extension/icons/extentionIcon.png" alt="Ferry icon"></div>
+    Ferry
+  </a>
+  <div class="nav-links">
+    <a href="#how">How it works</a>
+    <a href="#install">Install</a>
+    <a href="https://github.com/ignvaibhav/Ferry" target="_blank">GitHub</a>
+  </div>
+  <a class="nav-cta" data-release-link href="https://github.com/ignvaibhav/Ferry/releases/latest" target="_blank" rel="noreferrer">↓ Download</a>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-glow"></div>
+  <div class="hero-badge">
+    <div class="hero-badge-dot"></div>
+    Early Release · macOS · <span data-release-version>Latest release</span>
+  </div>
+  <h1 class="hero-title">
+    "yt-dlp"<br><span>without the terminal.</span>
+  </h1>
+  <p class="hero-sub">
+    Ferry is a browser extension + desktop engine that puts a beautiful download UI on top of yt-dlp. Videos, audio, thumbnails — from any yt-dlp supported site. No commands. No config.
+  </p>
+  <div class="hero-actions">
+    <a class="btn-primary" data-release-link href="https://github.com/ignvaibhav/Ferry/releases/latest" target="_blank" rel="noreferrer">
+      <span class="btn-icon">⬇</span> Download for macOS
+    </a>
+    <a class="btn-secondary" href="https://github.com/ignvaibhav/Ferry" target="_blank" rel="noreferrer">
+      <span class="btn-icon">★</span> Star on GitHub
+    </a>
+  </div>
+
+  <!-- MOCKUP -->
+  <div class="hero-mockup">
+    <div class="mockup-bar">
+      <div class="mockup-dots">
+        <div class="dot dot-r"></div>
+        <div class="dot dot-y"></div>
+        <div class="dot dot-g"></div>
+      </div>
+      <div class="mockup-url">youtube.com/watch?v=dQw4w9WgXcQ</div>
+    </div>
+    <div class="mockup-body">
+      <div class="fake-video">
+        <div class="video-player">
+          <div class="video-thumb-gradient"></div>
+          <div class="video-play-icon">▶</div>
+          <div class="video-progress"><div class="video-progress-fill"></div></div>
+        </div>
+        <div class="action-bar">
+          <div class="yt-btn"><span class="yt-btn-icon">👍</span> 4.2M</div>
+          <div class="yt-btn"><span class="yt-btn-icon">👎</span></div>
+          <div class="yt-btn"><span class="yt-btn-icon">↗</span> Share</div>
+          <div class="yt-btn"><span class="yt-btn-icon">✂</span> Remix</div>
+          <div class="ferry-btn">
+            <div class="ferry-logo-sm"><img src="extension/icons/extentionIcon.png" alt="Ferry icon"></div>
+            Ferry
+          </div>
+        </div>
+        <div class="popup-wrapper">
+          <div style="display:flex;justify-content:flex-end;">
+            <div class="popup">
+              <div class="popup-head">
+                <div class="popup-title">Ferry</div>
+                <div class="popup-close">×</div>
+              </div>
+              <div class="popup-tabs">
+                <div class="ptab on">▶ Video</div>
+                <div class="ptab">♪ Audio</div>
+                <div class="ptab">✂ Clip</div>
+              </div>
+              <div class="q-label">Quality</div>
+              <div class="q-item sel">
+                <span>MP4 · 1080p · Full HD</span>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <span class="q-sz">280 MB</span>
+                  <span class="q-check">✓</span>
+                </div>
+              </div>
+              <div class="q-item"><span>MP4 · 720p · HD</span><span class="q-sz">140 MB</span></div>
+              <div class="q-item"><span>MP4 · 2160p · 4K</span><span class="q-sz">1.2 GB</span></div>
+              <div class="prog-track"><div class="prog-fill" id="pf"></div></div>
+              <button class="dl-button">Download · 280 MB</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- TECH STRIP -->
+<div class="tech-strip">
+  <div class="tech-inner">
+    <div class="tech-item"><div class="tech-dot"></div>Powered by yt-dlp</div>
+    <div class="tech-item"><div class="tech-dot"></div>Built with Tauri + Rust</div>
+    <div class="tech-item"><div class="tech-dot"></div>Chrome · Brave · Edge</div>
+    <div class="tech-item"><div class="tech-dot"></div>MIT License</div>
+    <div class="tech-item"><div class="tech-dot"></div>No servers. No accounts.</div>
+    <div class="tech-item"><div class="tech-dot"></div>Live progress via WebSocket</div>
+    <div class="tech-item"><div class="tech-dot"></div>ffmpeg bundled</div>
+    <div class="tech-item"><div class="tech-dot"></div>Local-first · Private by design</div>
+    <!-- duplicate for seamless scroll -->
+    <div class="tech-item"><div class="tech-dot"></div>Powered by yt-dlp</div>
+    <div class="tech-item"><div class="tech-dot"></div>Built with Tauri + Rust</div>
+    <div class="tech-item"><div class="tech-dot"></div>Chrome · Brave · Edge</div>
+    <div class="tech-item"><div class="tech-dot"></div>MIT License</div>
+    <div class="tech-item"><div class="tech-dot"></div>No servers. No accounts.</div>
+    <div class="tech-item"><div class="tech-dot"></div>Live progress via WebSocket</div>
+    <div class="tech-item"><div class="tech-dot"></div>ffmpeg bundled</div>
+    <div class="tech-item"><div class="tech-dot"></div>Local-first · Private by design</div>
+  </div>
+</div>
+
+<!-- PROBLEM -->
+<section>
+  <div class="container">
+    <div class="section-label" id="problem-label">The Problem</div>
+    <h2 class="section-title">yt-dlp is brilliant.<br>Most people can't use it.</h2>
+    <p class="section-sub">The tool exists. The power is there. The terminal is the wall.</p>
+    <div class="problem-grid">
+      <div class="problem-card">
+        <div class="problem-num">01</div>
+        <div class="problem-title"><span class="problem-strike">Sketchy download sites</span></div>
+        <p class="problem-text">12 popups, suspicious redirects, and a fake download button before you find the real one. Every time.</p>
+      </div>
+      <div class="problem-card">
+        <div class="problem-num">02</div>
+        <div class="problem-title"><span class="problem-strike">Paid apps for basics</span></div>
+        <p class="problem-text">$9.99/month subscriptions for something that should be free and simple. Worse, most are just wrappers anyway.</p>
+      </div>
+      <div class="problem-card">
+        <div class="problem-num">03</div>
+        <div class="problem-title">yt-dlp, but the terminal</div>
+        <p class="problem-text">The best downloader ever built lives behind a command line. Ferry brings it to everyone else.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW IT WORKS -->
+<section id="how" style="background:var(--s1);border-top:0.5px solid var(--border);border-bottom:0.5px solid var(--border)">
+  <div class="container">
+    <div class="section-label">How It Works</div>
+    <h2 class="section-title">Two parts. One click.</h2>
+    <p class="section-sub">Ferry (the extension) + Island (the desktop engine). Ferry sees the page. Island does the work.</p>
+    <div class="flow" style="margin-top:3rem;border:0.5px solid var(--border);border-radius:12px;overflow:hidden">
+      <div class="flow-step">
+        <div class="step-num">STEP 01</div>
+        <div class="step-icon">🌐</div>
+        <div class="step-title">Visit any supported page</div>
+        <p class="step-text">Ferry detects the video and injects its button directly into the page UI. It belongs there.</p>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">STEP 02</div>
+        <div class="step-icon">🎛</div>
+        <div class="step-title">Choose format & quality</div>
+        <p class="step-text">Video, audio, or thumbnail. Pick your quality preset. Optionally set a clip range.</p>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">STEP 03</div>
+        <div class="step-icon">⚡</div>
+        <div class="step-title">Island downloads locally</div>
+        <p class="step-text">The job goes to Island running on your Mac. yt-dlp + ffmpeg run locally. File saved to your Downloads folder.</p>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">STEP 04</div>
+        <div class="step-icon">✅</div>
+        <div class="step-title">Live progress. Then done.</div>
+        <p class="step-text">Track downloads live in the extension, then click "Reveal in Finder" once the file is ready.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section>
+  <div class="container">
+    <div class="section-label">Features</div>
+    <h2 class="section-title">Everything yt-dlp can do.<br>Nothing you have to type.</h2>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feat-icon">🎬</div>
+        <div class="feat-title">Video downloads</div>
+        <p class="feat-text">360p, 720p, 1080p, 1440p, and 4K presets. Clean format list — no raw codec dump to parse.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">🎵</div>
+        <div class="feat-title">Audio extraction</div>
+        <p class="feat-text">Top 3 audio quality options, pulled directly by yt-dlp. No re-encoding, no quality loss.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">🖼</div>
+        <div class="feat-title">Thumbnail download</div>
+        <p class="feat-text">Save the highest resolution thumbnail available. Useful for creators, archivists, and researchers.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">✂️</div>
+        <div class="feat-title">Clip range</div>
+        <p class="feat-text">Set a start and end time directly in the browser. Island uses ffmpeg to cut precisely — no full download needed.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">📡</div>
+        <div class="feat-title">Live progress</div>
+        <p class="feat-text">WebSocket connection from Island to Ferry. See real-time speed, percentage, and ETA as it downloads.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feat-icon">🔒</div>
+        <div class="feat-title">Completely local</div>
+        <p class="feat-text">No cloud. No servers. No account. Island runs on 127.0.0.1 — your data never leaves your machine.</p>
+      </div>
+    </div>
+
+    <!-- STATS -->
+    <div class="stats-row">
+      <div class="stat-cell">
+        <div class="stat-num">1000+</div>
+        <div class="stat-label">yt-dlp supported sites</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-num">0</div>
+        <div class="stat-label">servers in the stack</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-num">5</div>
+        <div class="stat-label">video quality presets</div>
+      </div>
+      <div class="stat-cell">
+        <div class="stat-num">MIT</div>
+        <div class="stat-label">open source license</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INSTALL -->
+<section id="install" style="background:var(--s1);border-top:0.5px solid var(--border);border-bottom:0.5px solid var(--border)">
+  <div class="container">
+    <div class="section-label">Get Started</div>
+    <h2 class="section-title">Up in 3 steps.</h2>
+    <p class="section-sub">macOS early release. Works on Chrome, Brave, and Edge.</p>
+
+    <div class="install-box">
+      <div class="install-steps">
+        <div class="install-step">
+          <div class="step-circle">1</div>
+          <div>
+            <div class="install-title">Download & launch Island</div>
+            <div class="install-sub">Download <strong>Island-macOS-app.zip</strong> from GitHub Releases. Unzip and open Island — it runs quietly in your menu bar.</div>
+            <a data-release-link href="https://github.com/ignvaibhav/Ferry/releases/latest" target="_blank" rel="noreferrer" style="display:inline-flex;align-items:center;gap:6px;margin-top:10px;background:var(--accent);color:#0a0a0a;font-family:var(--display);font-size:11px;font-weight:700;padding:7px 14px;border-radius:7px;text-decoration:none">⬇ Island for macOS</a>
+          </div>
+        </div>
+        <div class="install-step">
+          <div class="step-circle">2</div>
+          <div>
+            <div class="install-title">Download &amp; load the Ferry extension</div>
+            <div class="install-sub">
+              Download <strong>ferry-extension.zip</strong> from GitHub Releases, unzip it, then open <span class="code-chip">chrome://extensions</span> in Chrome, Brave, or Edge. Enable <strong>Developer Mode</strong> (top-right toggle), click <strong>"Load unpacked"</strong>, and select the unzipped folder.
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px;">
+              <a id="ext-download-btn" href="https://github.com/ignvaibhav/Ferry/releases/latest" target="_blank" rel="noreferrer" style="display:inline-flex;align-items:center;gap:6px;background:var(--s3);border:0.5px solid var(--border2);color:var(--text);font-family:var(--display);font-size:11px;font-weight:700;padding:7px 14px;border-radius:7px;text-decoration:none;">&#x2B07; ferry-extension.zip</a>
+              <span style="font-size:11px;color:var(--muted);">released alongside Island &mdash; no Chrome Web Store needed</span>
+            </div>
+          </div>
+        </div>
+        <div class="install-step">
+          <div class="step-circle">3</div>
+          <div>
+            <div class="install-title">Go to any supported page</div>
+            <div class="install-sub">Open any site yt-dlp supports. The Ferry button appears in the page UI. Click it, pick your format, and download.</div>
+          </div>
+        </div>
+      </div>
+      <div class="gatekeeper-note">
+        <strong style="color:var(--accent)">macOS Gatekeeper note:</strong> Builds are not notarized yet. If macOS blocks Island on first open, right-click the app → Open, or run <code>xattr -cr /Applications/Island.app</code> in Terminal. We're working on notarization for v2.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- OPEN SOURCE 
+<section>
+  <div class="container">
+    <div class="os-block">
+      <div class="os-left">
+        <div class="os-title">Fully open source.</div>
+        <div class="os-sub">Ferry + Island are MIT licensed. No telemetry. No analytics. No hidden calls home. Read the code, fork it, make it yours.</div>
+        <div class="os-badges">
+          <span class="badge badge-accent">MIT License</span>
+          <span class="badge">Rust + JavaScript</span>
+          <span class="badge">Tauri v2</span>
+          <span class="badge">yt-dlp</span>
+          <span class="badge">ffmpeg bundled</span>
+        </div>
+      </div>
+      <a class="github-btn" href="https://github.com/ignvaibhav/Ferry" target="_blank">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
+        View on GitHub
+      </a>
+    </div>
+  </div>
+</section> -->
+
+<!-- FINAL CTA -->
+<section class="cta-section">
+  <div class="cta-glow"></div>
+  <h2 class="cta-title">Try it today.<br><span style="color:var(--accent)">It's free. Forever.</span></h2>
+  <p class="cta-sub">Download Island, load the extension, and see what yt-dlp feels like when it just works.</p>
+  <div style="display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap">
+    <a class="btn-primary" data-release-link href="https://github.com/ignvaibhav/Ferry/releases/latest" target="_blank" rel="noreferrer">
+      ⬇ Download for macOS
+    </a>
+    <a class="btn-secondary" href="https://github.com/ignvaibhav/Ferry" target="_blank" rel="noreferrer">
+      View source on GitHub
+    </a>
+  </div>
+  <div class="platform-row">
+    <div class="platform-pill platform-active">
+      <div class="platform-dot" style="background:var(--accent)"></div>
+      macOS — Available now
+    </div>
+    <div class="platform-pill">
+      <div class="platform-dot" style="background:var(--muted2)"></div>
+      Windows — Coming soon
+    </div>
+    <div class="platform-pill">
+      <div class="platform-dot" style="background:var(--muted2)"></div>
+      Linux — Coming soon
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <a class="footer-logo" href="#">
+    <div class="ferry-logo-sm"><img src="extension/icons/extentionIcon.png" alt="Ferry icon"></div>
+  </a>
+  <div class="footer-links">
+    <a href="https://github.com/ignvaibhav/Ferry" target="_blank" rel="noreferrer">GitHub</a>
+    <a href="https://github.com/ignvaibhav/Ferry/blob/master/LICENSE" target="_blank" rel="noreferrer">MIT License</a>
+    <a href="https://github.com/ignvaibhav/Ferry/releases" target="_blank" rel="noreferrer">Releases</a>
+    <a href="https://github.com/ignvaibhav/Ferry/issues" target="_blank" rel="noreferrer">Issues</a>
+  </div>
+  <!-- <div style="font-size:11px;color:var(--muted2)">Built with Tauri · Rust · yt-dlp</div> -->
+</footer>
+
+<script src="home.js"></script>
+</body>
+</html>

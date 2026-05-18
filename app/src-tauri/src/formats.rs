@@ -95,7 +95,8 @@ pub async fn fetch_formats(url: &str) -> Result<Vec<FormatOption>> {
 
     let data: Value =
         serde_json::from_slice(&output.stdout).context("invalid yt-dlp json output")?;
-    let (videos_by_height, audio_candidates, thumbnail_candidates) = parse_format_data(&data);
+    let duration = data.get("duration").and_then(Value::as_f64).unwrap_or(0.0);
+    let (videos_by_height, audio_candidates, thumbnail_candidates) = parse_format_data(&data, duration);
 
     let result = build_format_options(
         url,
@@ -121,6 +122,7 @@ pub async fn fetch_formats(url: &str) -> Result<Vec<FormatOption>> {
 /// Parse raw yt-dlp JSON into video and audio candidate lists.
 fn parse_format_data(
     data: &Value,
+    duration: f64,
 ) -> (
     BTreeMap<u16, Vec<VideoCandidate>>,
     Vec<AudioCandidate>,
@@ -156,10 +158,14 @@ fn parse_format_data(
             .unwrap_or(0.0);
         let fps = item.get("fps").and_then(Value::as_f64).unwrap_or(30.0) as u16;
 
-        let filesize = item
+        let mut filesize = item
             .get("filesize")
             .and_then(Value::as_u64)
             .or_else(|| item.get("filesize_approx").and_then(Value::as_u64));
+
+        if filesize.is_none() && tbr > 0.0 && duration > 0.0 {
+            filesize = Some((tbr * 1000.0 / 8.0 * duration) as u64);
+        }
 
         if !has_url {
             continue;

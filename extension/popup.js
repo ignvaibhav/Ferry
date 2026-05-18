@@ -2,7 +2,7 @@
  * Ferry popup — focused transfer control surface.
  */
 
-import { checkHealth, revealPath, cancelJob, openSettings } from "./api.js";
+import { checkHealth, revealPath, openPath, cancelJob, openSettings } from "./api.js";
 import { runtimeAvailable, safeSendMessage } from "./runtime.js";
 
 var statusDot = document.getElementById("status-dot");
@@ -154,10 +154,16 @@ function getMediaBadge(item) {
 }
 
 function getJobMetaLine(item) {
-  var bits = [];
-  if (item.qualityLabel) bits.push(item.qualityLabel);
-  if (item.formatLabel) bits.push(item.formatLabel);
-  return bits.join(" · ");
+  return item.qualityLabel || item.formatLabel || "";
+}
+
+function getJobQuality(item) {
+  var meta = item.qualityLabel || item.formatLabel || "";
+  var parts = meta.split("·");
+  if (parts.length >= 2) {
+    return parts[1].trim();
+  }
+  return "";
 }
 
 function getThumbnailMarkup(item) {
@@ -217,24 +223,27 @@ function createJobCard(item) {
   card.dataset.jobId = item.jobId;
 
   var statusText = getStatusText(item);
-  var progress = (item.progress !== undefined && item.progress !== null) ? item.progress : 0;
   var metaLine = getJobMetaLine(item);
+  var qualityText = getJobQuality(item);
   var actionMarkup = getJobActionMarkup(item);
+  var mediaBadge = getMediaBadge(item);
+  
+  var qualityBadge = qualityText ? '<span class="transfer-badge transfer-badge-quality" style="margin-left: 6px;">' + escapeHtml(qualityText) + '</span>' : '';
+  var statusBadge = '<span class="transfer-badge transfer-badge-status transfer-status" style="margin-left: 6px;">' + escapeHtml(statusText) + '</span>';
+  
+  var badges = '<span class="transfer-badge transfer-badge-media">' + escapeHtml(mediaBadge) + '</span>' + qualityBadge + statusBadge;
+  var actionsHtml = actionMarkup ? '<div class="transfer-actions">' + actionMarkup + '</div>' : '';
   
   var html = 
     '<div class="transfer-thumb">' + getThumbnailMarkup(item) + '</div>' +
     '<div class="transfer-info">' +
       '<div class="transfer-badge-row">' +
-        '<span class="transfer-badge">' + escapeHtml(item.qualityLabel || "Best") + '</span>' +
-        '<span class="transfer-badge">' + escapeHtml(item.formatLabel || "MP4") + '</span>' +
+        badges +
       '</div>' +
       '<div class="transfer-title" title="' + escapeHtml(item.title) + '">' + escapeHtml(item.title) + '</div>' +
       '<div class="transfer-meta">' + escapeHtml(metaLine) + '</div>' +
-      '<div class="transfer-footer">' +
-        '<span class="transfer-status">' + escapeHtml(statusText) + '</span>' +
-      '</div>' +
     '</div>' +
-    '<div class="transfer-actions">' + actionMarkup + '</div>';
+    actionsHtml;
 
   card.innerHTML = html;
 
@@ -245,6 +254,12 @@ function createJobCard(item) {
       var action = btn.dataset.action;
       if (action === "reveal") {
         revealPath(btn.dataset.path).then(function(result) {
+          if (result && result.ok === false) refreshHealthState();
+        });
+        return;
+      }
+      if (action === "open") {
+        openPath(btn.dataset.path).then(function(result) {
           if (result && result.ok === false) refreshHealthState();
         });
         return;
@@ -266,12 +281,12 @@ function createJobCard(item) {
 
 function getJobActionMarkup(item) {
   if (item.state === "done" && item.path) {
-    return '<button class="transfer-action-btn" title="Open folder" aria-label="Open folder" data-action="reveal" data-path="' + escapeHtml(item.path) + '">' +
+    return '<button class="transfer-action-btn action-reveal" title="Open folder" aria-label="Open folder" data-action="reveal" data-path="' + escapeHtml(item.path) + '">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>' +
     '</button>';
   }
   if (item.state === "progress") {
-    return '<button class="transfer-action-btn" title="Cancel" aria-label="Cancel" data-action="cancel" data-job-id="' + escapeHtml(item.jobId) + '">' +
+    return '<button class="transfer-action-btn action-cancel" title="Cancel" aria-label="Cancel" data-action="cancel" data-job-id="' + escapeHtml(item.jobId) + '">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/></svg>' +
     '</button>';
   }

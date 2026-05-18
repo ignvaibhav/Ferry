@@ -5,131 +5,306 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Island Settings</title>
     <style>
+      @import url("https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@500;600;700&display=swap");
+
       :root {
         color-scheme: dark;
+        --bg: #0c0c0c;
+        --surface: #141414;
+        --surface2: #1a1a1a;
+        --surface3: #222222;
+        --border: rgba(255, 255, 255, 0.08);
+        --border2: rgba(255, 255, 255, 0.14);
+        --text: #f0f0f0;
+        --muted: #888;
+        --muted2: #5a5a5a;
+        --accent: #b5f23d;
+        --accent-warm: #ff5c3a;
+        --accent-cool: #6aa5ff;
+        --mono: "DM Mono", monospace;
+        --display: "Syne", sans-serif;
+        --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+        --dur-fast: 120ms;
       }
+
       * {
         box-sizing: border-box;
       }
+
+      html,
       body {
         margin: 0;
-        font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
-        background: #101010;
-        color: #f2f2f2;
+        min-height: 100%;
+        background: var(--bg);
       }
-      main {
-        padding: 20px;
-        display: grid;
-        gap: 14px;
+
+      body {
+        color: var(--text);
+        font-family: var(--mono);
       }
-      .header {
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      .settings-shell {
+        width: min(100%, 690px);
+        margin: 0 auto;
+        padding: 24px;
+      }
+
+      .settings-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
       }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
       h1 {
         margin: 0;
-        font-size: 17px;
-        font-weight: 650;
+        font-family: var(--display);
+        font-size: 24px;
+        line-height: 1;
       }
-      .version-badge {
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 32px;
+        padding: 0 12px;
+        border-radius: 8px;
+        border: 0.5px solid var(--border2);
+        background: var(--surface2);
+        color: var(--muted);
+        white-space: nowrap;
         font-size: 11px;
-        color: #888;
-        border: 1px solid #2d2d2d;
-        border-radius: 6px;
-        padding: 2px 8px;
       }
-      .muted {
-        color: #b6b6b6;
-        font-size: 12px;
+
+      .pill-live {
+        color: var(--accent);
+        background: rgba(181, 242, 61, 0.12);
+        border-color: rgba(181, 242, 61, 0.24);
       }
-      .card {
-        border: 1px solid #2d2d2d;
-        border-radius: 12px;
-        background: #171717;
-        padding: 14px;
+
+      .pill-error {
+        color: var(--accent-warm);
+        background: rgba(255, 92, 58, 0.12);
+        border-color: rgba(255, 92, 58, 0.24);
+      }
+
+      .pill-update {
+        color: var(--accent-cool);
+        background: rgba(106, 165, 255, 0.14);
+        border-color: rgba(106, 165, 255, 0.28);
+      }
+
+      .settings-stack {
+        display: grid;
+        gap: 14px;
+      }
+
+      .settings-card {
+        background: var(--surface);
+        border: 0.5px solid var(--border2);
+        border-radius: 14px;
+        padding: 16px;
+      }
+
+      .field-stack {
         display: grid;
         gap: 10px;
       }
-      input {
+
+      .field-label {
+        margin: 0;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .path-input {
         width: 100%;
-        border: 1px solid #2f2f2f;
+        min-height: 42px;
+        padding: 0 12px;
         border-radius: 10px;
-        padding: 10px;
-        background: #121212;
-        color: #f2f2f2;
-        font-size: 13px;
+        border: 0.5px solid var(--border2);
+        background: var(--surface2);
+        color: var(--text);
+        outline: none;
+        transition:
+          border-color var(--dur-fast) var(--ease-expo),
+          background var(--dur-fast) var(--ease-expo);
       }
-      .row {
+
+      .path-input:focus {
+        border-color: var(--accent);
+        background: var(--surface3);
+      }
+
+      .action-row {
         display: flex;
-        gap: 8px;
+        flex-wrap: wrap;
+        gap: 10px;
       }
-      button {
-        border: 1px solid #2f2f2f;
+
+      .action-btn {
+        min-height: 38px;
+        padding: 0 14px;
         border-radius: 10px;
-        padding: 10px 14px;
-        background: #f2f2f2;
-        color: #111;
+        border: 0.5px solid var(--border2);
+        background: var(--surface2);
+        color: var(--text);
         cursor: pointer;
+        transition:
+          background var(--dur-fast) var(--ease-expo),
+          border-color var(--dur-fast) var(--ease-expo),
+          color var(--dur-fast) var(--ease-expo),
+          transform var(--dur-fast) var(--ease-expo);
+      }
+
+      .action-btn:hover:not(:disabled) {
+        background: var(--surface3);
+        border-color: var(--accent);
+      }
+
+      .action-btn:focus-visible {
+        outline: 2px solid rgba(181, 242, 61, 0.28);
+        outline-offset: 2px;
+      }
+
+      .action-btn:disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+
+      .action-btn-primary {
+        background: var(--accent);
+        color: #101106;
+        border-color: var(--accent);
         font-weight: 600;
-        font-size: 13px;
-        transition: opacity 0.15s ease;
       }
-      button:hover {
-        opacity: 0.9;
+
+      .action-btn-primary:hover:not(:disabled) {
+        background: #c0f75a;
+        border-color: #c0f75a;
       }
-      button.secondary {
-        background: #1b1b1b;
-        color: #e7e7e7;
+
+      .icon-link-btn {
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
       }
-      #message {
-        min-height: 18px;
-        font-size: 12px;
+
+      .icon-link-btn svg {
+        width: 16px;
+        height: 16px;
       }
-      .status-row {
+
+      .meta-strip {
         display: flex;
         align-items: center;
-        gap: 6px;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 14px;
+        padding-top: 14px;
+        border-top: 0.5px solid var(--border);
+      }
+
+      .meta-copy {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+
+      .meta-label {
+        color: var(--muted);
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .meta-value {
+        color: var(--text);
         font-size: 12px;
-        color: #888;
       }
-      .status-dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
+
+      .meta-value .muted-inline {
+        color: var(--muted);
       }
-      .status-dot.online {
-        background: #4ade80;
+
+      .feedback-banner {
+        margin-top: 12px;
+        min-height: 0;
+        color: var(--muted);
+        font-size: 12px;
       }
-      .status-dot.offline {
-        background: #f87171;
+
+      .feedback-banner[data-tone="success"] {
+        color: var(--accent);
+      }
+
+      .feedback-banner[data-tone="error"] {
+        color: var(--accent-warm);
       }
     </style>
   </head>
   <body>
-    <main>
-      <div class="header">
-        <h1>Island Settings</h1>
-        <span id="version-badge" class="version-badge">v1</span>
-      </div>
-      <div class="status-row">
-        <span id="status-dot" class="status-dot"></span>
-        <span id="status-text">Checking API…</span>
-      </div>
-      <div class="muted">Default download folder is your system Downloads folder.</div>
+    <main class="settings-shell">
+      <header class="settings-header">
+        <h1>Settings</h1>
+        <div class="header-actions">
+          <button id="open-project-site" class="action-btn icon-link-btn" type="button" aria-label="Open Ferry website" title="Open Ferry website">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="9"></circle>
+              <path d="M3 12h18"></path>
+              <path d="M12 3a15 15 0 0 1 0 18"></path>
+              <path d="M12 3a15 15 0 0 0 0 18"></path>
+            </svg>
+          </button>
+          <button id="open-project-github" class="action-btn icon-link-btn" type="button" aria-label="Open Ferry GitHub" title="Open Ferry GitHub">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M12 .5C5.65.5.5 5.65.5 12A11.5 11.5 0 0 0 8.36 22.9c.58.1.79-.25.79-.56v-2.02c-3.18.69-3.85-1.35-3.85-1.35-.52-1.3-1.27-1.64-1.27-1.64-1.04-.71.08-.7.08-.7 1.15.08 1.75 1.18 1.75 1.18 1.02 1.76 2.68 1.25 3.34.95.1-.74.4-1.24.73-1.53-2.54-.29-5.21-1.27-5.21-5.65 0-1.25.44-2.27 1.17-3.07-.12-.29-.51-1.45.11-3.03 0 0 .96-.31 3.14 1.17A10.8 10.8 0 0 1 12 6.85c.97 0 1.95.13 2.86.39 2.18-1.48 3.14-1.17 3.14-1.17.62 1.58.23 2.74.11 3.03.73.8 1.17 1.82 1.17 3.07 0 4.39-2.67 5.35-5.22 5.64.41.36.78 1.06.78 2.14v3.18c0 .31.21.66.8.55A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"></path>
+            </svg>
+          </button>
+          <div id="status-pill" class="pill pill-error">Checking…</div>
+        </div>
+      </header>
 
-      <div class="card">
-        <label class="muted" for="download-path">Download Path</label>
-        <div class="row">
-          <input id="download-path" type="text" placeholder="Enter folder path" />
-          <button id="browse-btn" class="secondary">Browse…</button>
-        </div>
-        <div class="row">
-          <button id="save-btn">Save</button>
-          <button id="reset-btn" class="secondary">Reset To Default</button>
-        </div>
-        <div id="message" class="muted"></div>
-      </div>
+      <section class="settings-stack">
+        <article class="settings-card">
+          <div class="field-stack">
+            <label class="field-label" for="download-path">Folder path</label>
+            <input id="download-path" class="path-input" type="text" placeholder="/Users/you/Downloads" />
+          </div>
+
+          <div class="action-row" style="margin-top: 14px;">
+            <button id="save-btn" class="action-btn action-btn-primary" type="button">Save folder</button>
+            <button id="browse-btn" class="action-btn" type="button">Browse…</button>
+            <button id="reset-btn" class="action-btn" type="button">Reset to default</button>
+          </div>
+
+          <div class="meta-strip">
+            <div class="meta-copy">
+              <span class="meta-label">Release status</span>
+              <span id="release-status" class="meta-value">Checking GitHub Releases…</span>
+            </div>
+            <div id="release-pill" class="pill">Checking…</div>
+          </div>
+
+          <div id="message" class="feedback-banner" aria-live="polite"></div>
+        </article>
+      </section>
     </main>
 
     <script>
@@ -137,97 +312,221 @@
         window.__TAURI__?.core?.invoke ||
         window.__TAURI_INTERNALS__?.invoke ||
         null;
+
       const pathInput = document.getElementById("download-path");
       const browseBtn = document.getElementById("browse-btn");
       const saveBtn = document.getElementById("save-btn");
       const resetBtn = document.getElementById("reset-btn");
+      const openProjectSiteBtn = document.getElementById("open-project-site");
+      const openProjectGitHubBtn = document.getElementById("open-project-github");
       const message = document.getElementById("message");
-      const statusDot = document.getElementById("status-dot");
-      const statusText = document.getElementById("status-text");
-      const versionBadge = document.getElementById("version-badge");
+      const statusPill = document.getElementById("status-pill");
+      const releaseStatus = document.getElementById("release-status");
+      const releasePill = document.getElementById("release-pill");
 
-      function setMessage(text, isError = false) {
-        message.textContent = text;
-        message.style.color = isError ? "#ff9a9a" : "#b6b6b6";
+      const PROJECT_WEBSITE_URL = "https://ignvaibhav.github.io/Ferry";
+      const PROJECT_GITHUB_URL = "https://github.com/ignvaibhav/Ferry";
+      const LATEST_RELEASE_API = "https://api.github.com/repos/ignvaibhav/Ferry/releases/latest";
+      let currentDesktopVersion = "";
+      let latestReleaseUrl = PROJECT_GITHUB_URL + "/releases/latest";
+
+      function setFeedback(text, tone) {
+        message.textContent = text || "";
+        if (!tone) {
+          message.removeAttribute("data-tone");
+          return;
+        }
+        message.setAttribute("data-tone", tone);
+      }
+
+      function setBusy(button, busy) {
+        if (!button) return;
+        button.disabled = Boolean(busy);
+      }
+
+      function setReleaseState(text, pillText, pillTone) {
+        if (releaseStatus) releaseStatus.textContent = text;
+        if (!releasePill) return;
+        releasePill.className = "pill" + (pillTone ? " " + pillTone : "");
+        releasePill.textContent = pillText;
+      }
+
+      function normalizeVersion(version) {
+        return String(version || "").trim().replace(/^v/i, "");
+      }
+
+      function compareVersions(left, right) {
+        const leftParts = normalizeVersion(left).split(".").map((part) => parseInt(part, 10) || 0);
+        const rightParts = normalizeVersion(right).split(".").map((part) => parseInt(part, 10) || 0);
+        const size = Math.max(leftParts.length, rightParts.length);
+
+        for (let index = 0; index < size; index += 1) {
+          const leftValue = leftParts[index] || 0;
+          const rightValue = rightParts[index] || 0;
+          if (leftValue > rightValue) return 1;
+          if (leftValue < rightValue) return -1;
+        }
+
+        return 0;
+      }
+
+      function setStatus(online, text) {
+        statusPill.className = "pill " + (online ? "pill-live" : "pill-error");
+        statusPill.textContent = online ? "Island online" : "Island offline";
       }
 
       async function checkApiStatus() {
         try {
           const res = await fetch("http://127.0.0.1:49152/health");
-          if (res.ok) {
-            const data = await res.json();
-            statusDot.className = "status-dot online";
-            statusText.textContent = "API online";
-            if (data.version) versionBadge.textContent = `v${data.version}`;
-          } else {
-            statusDot.className = "status-dot offline";
-            statusText.textContent = "API error";
-          }
+          if (!res.ok) throw new Error("API error");
+
+          const data = await res.json();
+          setStatus(true, "Connected on port " + (data.port || 49152));
+          currentDesktopVersion = normalizeVersion(data.version || "");
         } catch {
-          statusDot.className = "status-dot offline";
-          statusText.textContent = "API offline";
+          setStatus(false, "Not reachable");
+        }
+      }
+
+      async function loadLatestReleaseInfo() {
+        setReleaseState("Checking GitHub Releases…", "Checking…", "");
+
+        try {
+          const response = await fetch(LATEST_RELEASE_API, {
+            headers: {
+              Accept: "application/vnd.github+json",
+            },
+          });
+
+          if (!response.ok) {
+            throw new Error("GitHub release check failed");
+          }
+
+          const data = await response.json();
+          const latestVersion = normalizeVersion(data.tag_name || "");
+          latestReleaseUrl = typeof data.html_url === "string" ? data.html_url : latestReleaseUrl;
+
+          if (!latestVersion) {
+            setReleaseState("Latest release could not be read.", "Unavailable", "pill-error");
+            return;
+          }
+
+          if (currentDesktopVersion && compareVersions(latestVersion, currentDesktopVersion) > 0) {
+            setReleaseState(
+              "A newer build is available on GitHub Releases.",
+              "Update · v" + latestVersion,
+              "pill-update"
+            );
+            return;
+          }
+
+          if (currentDesktopVersion) {
+            setReleaseState(
+              "This Mac is running the latest published build.",
+              "Up to date · v" + latestVersion,
+              "pill-live"
+            );
+            return;
+          }
+
+          setReleaseState("Latest published build found on GitHub Releases.", "Latest · v" + latestVersion, "pill-live");
+        } catch {
+          setReleaseState("GitHub Releases could not be reached right now.", "Unavailable", "pill-error");
         }
       }
 
       async function loadSettings() {
         if (!invoke) {
-          setMessage("Tauri bridge not available in this window.", true);
+          setFeedback("Tauri bridge not available in this window.", "error");
           return;
         }
+
         try {
           const data = await invoke("get_download_settings");
           pathInput.value = data.current_download_dir || data.default_download_dir || "";
-          setMessage(`Default: ${data.default_download_dir}`);
+          setFeedback("");
         } catch (error) {
-          setMessage(String(error || "Failed to load settings"), true);
+          setFeedback(String(error || "Failed to load settings"), "error");
         }
       }
 
-      saveBtn.addEventListener("click", async () => {
-        const path = pathInput.value.trim();
-        if (!path) {
-          setMessage("Download path cannot be empty.", true);
+      async function openExternalUrl(url) {
+        if (!invoke) {
+          setFeedback("Tauri bridge not available in this window.", "error");
           return;
         }
+
+        try {
+          await invoke("open_external_url", { url });
+        } catch (error) {
+          setFeedback(String(error || "Could not open link"), "error");
+        }
+      }
+
+      async function saveFolder() {
+        const path = pathInput.value.trim();
+        if (!path) {
+          setFeedback("Download path cannot be empty.", "error");
+          return;
+        }
+
+        setBusy(saveBtn, true);
         try {
           if (!invoke) throw new Error("Tauri bridge not available");
           const data = await invoke("set_download_directory", { path });
           pathInput.value = data.current_download_dir;
-          setMessage("Download path updated.");
+          setFeedback("Save folder updated.", "success");
         } catch (error) {
-          setMessage(String(error || "Failed to save path"), true);
+          setFeedback(String(error || "Failed to save folder"), "error");
+        } finally {
+          setBusy(saveBtn, false);
         }
-      });
+      }
 
-      browseBtn.addEventListener("click", async () => {
+      async function browseFolder() {
+        setBusy(browseBtn, true);
         try {
           if (!invoke) throw new Error("Tauri bridge not available");
           const selected = await invoke("browse_download_directory", {
             currentPath: pathInput.value.trim() || null,
           });
+
           if (selected) {
             pathInput.value = selected;
-            setMessage("Folder selected.");
+            setFeedback("Folder selected.", "success");
           }
         } catch (error) {
-          setMessage(String(error || "Failed to browse folder"), true);
+          setFeedback(String(error || "Failed to browse folder"), "error");
+        } finally {
+          setBusy(browseBtn, false);
         }
-      });
+      }
 
-      resetBtn.addEventListener("click", async () => {
+      async function resetFolder() {
+        setBusy(resetBtn, true);
         try {
           if (!invoke) throw new Error("Tauri bridge not available");
           const data = await invoke("reset_download_directory");
-          pathInput.value = data.current_download_dir;
-          setMessage(`Using default: ${data.default_download_dir}`);
+          pathInput.value = data.current_download_dir || "";
+          setFeedback("Save folder reset to default.", "success");
         } catch (error) {
-          setMessage(String(error || "Failed to reset path"), true);
+          setFeedback(String(error || "Failed to reset folder"), "error");
+        } finally {
+          setBusy(resetBtn, false);
         }
-      });
+      }
+
+      saveBtn.addEventListener("click", saveFolder);
+      browseBtn.addEventListener("click", browseFolder);
+      resetBtn.addEventListener("click", resetFolder);
+      openProjectSiteBtn.addEventListener("click", () => openExternalUrl(PROJECT_WEBSITE_URL));
+      openProjectGitHubBtn.addEventListener("click", () => openExternalUrl(PROJECT_GITHUB_URL));
 
       loadSettings();
-      checkApiStatus();
-      setInterval(checkApiStatus, 10000);
+      checkApiStatus().then(loadLatestReleaseInfo);
+      setInterval(() => {
+        checkApiStatus().then(loadLatestReleaseInfo);
+      }, 10000);
     </script>
   </body>
 </html>

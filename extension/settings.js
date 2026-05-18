@@ -7,15 +7,11 @@ var FEEDBACK_HIDE_MS = 2800;
 var systemThemeQuery = globalThis.matchMedia ? globalThis.matchMedia("(prefers-color-scheme: dark)") : null;
 
 var statusEl = document.getElementById("settings-status");
-var versionEl = document.getElementById("extension-version");
 var currentThemeModeEl = document.getElementById("current-theme-mode");
 var desktopLinkStateEl = document.getElementById("desktop-link-state");
-var islandVersionEl = document.getElementById("island-version");
 var islandPortEl = document.getElementById("island-port");
 var downloadDirNameEl = document.getElementById("download-dir-name");
-var activityCountEl = document.getElementById("activity-count");
 var themeButtons = Array.from(document.querySelectorAll("[data-theme-mode]"));
-var clearActivityBtn = document.getElementById("clear-extension-activity");
 var desktopSettingsBtn = document.getElementById("open-desktop-settings");
 var desktopDownloadsBtn = document.getElementById("open-desktop-downloads");
 var closeSettingsBtn = document.getElementById("close-settings");
@@ -25,6 +21,7 @@ var state = {
   themeMode: "system",
   feedbackTimer: null,
   healthRefreshTimer: null,
+  latestRelease: null,
 };
 
 function getStorage() {
@@ -122,33 +119,26 @@ function saveThemeMode(themeMode) {
   return storage.set(payload).catch(function() {});
 }
 
-function loadActivityCount() {
-  var storage = getStorage();
-  if (!storage || !storage.get) {
-    if (activityCountEl) activityCountEl.textContent = "0 items";
-    return Promise.resolve();
-  }
-  return storage.get(ACTIVITY_KEY).then(function(data) {
-    var items = Array.isArray(data && data[ACTIVITY_KEY]) ? data[ACTIVITY_KEY] : [];
-    if (activityCountEl) {
-      activityCountEl.textContent = items.length + (items.length === 1 ? " item" : " items");
+function loadLatestReleaseInfo() {
+  var releaseVersionEl = document.getElementById("latest-release-version");
+  if (releaseVersionEl && !state.latestRelease) releaseVersionEl.textContent = "Checking…";
+
+  return fetch("https://api.github.com/repos/ignvaibhav/Ferry/releases/latest", {
+    headers: { Accept: "application/vnd.github+json" }
+  }).then(function(res) {
+    if (!res.ok) throw new Error();
+    return res.json();
+  }).then(function(data) {
+    if (data && data.tag_name) {
+      state.latestRelease = data.tag_name;
+      if (releaseVersionEl) releaseVersionEl.textContent = data.tag_name;
+    } else {
+      state.latestRelease = null;
+      if (releaseVersionEl) releaseVersionEl.textContent = "Unavailable";
     }
   }).catch(function() {
-    if (activityCountEl) activityCountEl.textContent = "0 items";
-  });
-}
-
-function clearActivity() {
-  var storage = getStorage();
-  if (!storage || !storage.set) return Promise.resolve();
-  var payload = {};
-  payload[ACTIVITY_KEY] = [];
-  return storage.set(payload).then(function() {
-    return loadActivityCount().then(function() {
-      setFeedback("Extension activity cleared.", "success");
-    });
-  }).catch(function() {
-    setFeedback("Could not clear extension activity.", "error");
+    state.latestRelease = null;
+    if (releaseVersionEl) releaseVersionEl.textContent = "Unavailable";
   });
 }
 
@@ -170,7 +160,6 @@ function updateHealthState(health) {
     desktopLinkStateEl.textContent = online ? "Connected" : "Offline";
   }
 
-  writeValue(islandVersionEl, health && health.version ? health.version : "—");
   writeValue(islandPortEl, health && health.port ? String(health.port) : "—");
   writeValue(downloadDirNameEl, downloadDirName || "—");
 
@@ -187,14 +176,6 @@ function checkDesktopHealth() {
     updateHealthState(null);
     return null;
   });
-}
-
-function initMeta() {
-  var runtime = globalThis.chrome && globalThis.chrome.runtime;
-  if (runtime && typeof runtime.getManifest === "function" && versionEl) {
-    var manifest = runtime.getManifest();
-    versionEl.textContent = manifest && manifest.version ? manifest.version : "0.0.0";
-  }
 }
 
 function openPopupFallback() {
@@ -245,10 +226,6 @@ function handleStorageChange(changes, areaName) {
   if (changes[THEME_STORAGE_KEY]) {
     applyThemeMode(changes[THEME_STORAGE_KEY].newValue || "system");
   }
-
-  if (changes[ACTIVITY_KEY]) {
-    loadActivityCount();
-  }
 }
 
 function bindEvents() {
@@ -261,12 +238,6 @@ function bindEvents() {
       });
     });
   });
-
-  if (clearActivityBtn) {
-    clearActivityBtn.addEventListener("click", function() {
-      clearActivity();
-    });
-  }
 
   if (desktopSettingsBtn) {
     desktopSettingsBtn.addEventListener("click", function() {
@@ -312,7 +283,7 @@ function bindEvents() {
   document.addEventListener("visibilitychange", function() {
     if (document.visibilityState === "visible") {
       checkDesktopHealth();
-      loadActivityCount();
+      loadLatestReleaseInfo();
     }
   });
 }
@@ -324,10 +295,9 @@ function startHealthRefreshLoop() {
 
 Promise.all([
   loadThemeMode(),
-  loadActivityCount(),
   checkDesktopHealth(),
+  loadLatestReleaseInfo(),
 ]).finally(function() {
-  initMeta();
   bindEvents();
   startHealthRefreshLoop();
 });

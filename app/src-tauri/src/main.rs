@@ -17,8 +17,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use tauri::menu::{Menu, MenuItem};
-use tauri::tray::TrayIconBuilder;
+use tauri::menu::{AboutMetadataBuilder, Menu, MenuBuilder, MenuItem, SubmenuBuilder};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use tracing::{error, info};
 
@@ -30,6 +30,9 @@ use crate::config::AppConfig;
 
 const SETTINGS_FILE_NAME: &str = "settings.json";
 const API_PORT: u16 = 49152;
+const MENU_SETTINGS_ID: &str = "settings";
+const MENU_OPEN_DOWNLOADS_ID: &str = "open_downloads";
+const MENU_QUIT_ID: &str = "quit";
 
 // ---------------------------------------------------------------------------
 // Persisted settings
@@ -184,6 +187,36 @@ fn browse_download_directory(current_path: Option<String>) -> Result<Option<Stri
     Ok(selected)
 }
 
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    let trimmed = url.trim();
+    if !(trimmed.starts_with("https://") || trimmed.starts_with("http://")) {
+        return Err("Only http and https links are supported".to_string());
+    }
+
+    if cfg!(target_os = "macos") {
+        std::process::Command::new("open")
+            .arg(trimmed)
+            .spawn()
+            .map_err(|e| format!("Failed to open link: {e}"))?;
+        return Ok(());
+    }
+
+    if cfg!(target_os = "windows") {
+        std::process::Command::new("explorer")
+            .arg(trimmed)
+            .spawn()
+            .map_err(|e| format!("Failed to open link: {e}"))?;
+        return Ok(());
+    }
+
+    std::process::Command::new("xdg-open")
+        .arg(trimmed)
+        .spawn()
+        .map_err(|e| format!("Failed to open link: {e}"))?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Utility
 // ---------------------------------------------------------------------------
@@ -203,6 +236,29 @@ pub async fn open_downloads_folder(config: &AppConfig) -> anyhow::Result<()> {
 
     std::process::Command::new("xdg-open").arg(&path).spawn()?;
     Ok(())
+}
+
+fn handle_menu_action(app: &AppHandle, config: &AppConfig, event_id: &str) {
+    match event_id {
+        MENU_SETTINGS_ID => {
+            if let Err(err) = open_settings_window(app) {
+                error!(error = %err, "failed to open settings window");
+            }
+        }
+        MENU_OPEN_DOWNLOADS_ID => {
+            let cfg = config.clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(err) = open_downloads_folder(&cfg).await {
+                    error!(error = %err, "failed to open downloads folder");
+                }
+            });
+        }
+        MENU_QUIT_ID => {
+            info!("user quit from application menu");
+            app.exit(0);
+        }
+        _ => {}
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -230,20 +286,100 @@ fn main() {
     let worker_config = app_config.clone();
     tauri::async_runtime::spawn(queue::run_worker(worker_queue, worker_config, receiver));
 
-    let tray_config = app_config.clone();
-
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .manage(app_config.clone())
         .invoke_handler(tauri::generate_handler![
             get_download_settings,
             set_download_directory,
             reset_download_directory,
-            browse_download_directory
+            browse_download_directory,
+            open_external_url
         ])
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["--hidden"]),
-        ))
+        ));
+
+    #[cfg(target_os = "macos")]
+    {
+        let menu_config = app_config.clone();
+        builder = builder
+            .menu(|app| {
+                let app_menu = SubmenuBuilder::new(app, "Island")
+                    .about(Some(
+                        AboutMetadataBuilder::new()
+                            .name(Some("Island"))
+                            .version(Some(server::VERSION))
+                            .build(),
+                    ))
+                    .separator()
+                    .text(MENU_SETTINGS_ID, "Settings…")
+                    .separator()
+                    .services()
+                    .separator()
+                    .hide()
+                    .hide_others()
+                    .separator()
+                    .quit_with_text("Quit Island")
+                    .build()?;
+
+                let file_menu = SubmenuBuilder::new(app, "File")
+                    .text(MENU_OPEN_DOWNLOADS_ID, "Open Downloads Folder")
+                    .separator()
+                    .close_window()
+                    .build()?;
+
+                let edit_menu = SubmenuBuilder::new(app, "Edit")
+                    .undo()
+                    .redo()
+                    .separator()
+                    .cut()
+                    .copy()
+                    .paste()
+                    .select_all()
+                    .build()?;
+
+                let view_menu = SubmenuBuilder::new(app, "View")
+                    .fullscreen()
+                    .build()?;
+
+                let window_menu = SubmenuBuilder::new(app, "Window")
+                    .minimize()
+                    .separator()
+                    .close_window()
+                    .build()?;
+
+                let help_menu = SubmenuBuilder::new(app, "Help")
+                    .about_with_text("About Island", None)
+                    .build()?;
+
+                MenuBuilder::new(app)
+                    .item(&app_menu)
+                    .item(&file_menu)
+                    .item(&edit_menu)
+                    .item(&view_menu)
+                    .item(&window_menu)
+                    .item(&help_menu)
+                    .build()
+            })
+            .on_menu_event(move |app, event| {
+                handle_menu_action(app, &menu_config, event.id().as_ref());
+            })
+            .on_tray_icon_event(|app, event| {
+                if let TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    if let Err(err) = open_settings_window(app) {
+                        error!(error = %err, "failed to open settings window from tray click");
+                    }
+                }
+            });
+    }
+
+    builder
         .setup(move |app| {
             // Start API server
             let api_queue = queue_state.clone();
@@ -271,42 +407,25 @@ fn main() {
             }
 
             // Build system tray
-            let settings_item = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
+            let settings_item = MenuItem::with_id(
+                app,
+                MENU_SETTINGS_ID,
+                "Settings",
+                true,
+                None::<&str>,
+            )?;
             let open_downloads = MenuItem::with_id(
                 app,
-                "open_downloads",
+                MENU_OPEN_DOWNLOADS_ID,
                 "Open Downloads Folder",
                 true,
                 None::<&str>,
             )?;
-            let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, MENU_QUIT_ID, "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&settings_item, &open_downloads, &quit])?;
 
             let _ = TrayIconBuilder::with_id("island")
                 .menu(&menu)
-                .on_menu_event({
-                    let config = tray_config.clone();
-                    move |app, event| match event.id.as_ref() {
-                        "settings" => {
-                            if let Err(err) = open_settings_window(app.app_handle()) {
-                                error!(error = %err, "failed to open settings window");
-                            }
-                        }
-                        "open_downloads" => {
-                            let cfg = config.clone();
-                            tauri::async_runtime::spawn(async move {
-                                if let Err(err) = open_downloads_folder(&cfg).await {
-                                    error!(error = %err, "failed to open downloads folder");
-                                }
-                            });
-                        }
-                        "quit" => {
-                            info!("user quit from tray menu");
-                            app.exit(0);
-                        }
-                        _ => {}
-                    }
-                })
                 .build(app)?;
 
             Ok(())

@@ -80,7 +80,7 @@ function notify(title, message, options) {
   }
 
   try {
-    var iconUrl = globalThis.chrome.runtime.getURL ? globalThis.chrome.runtime.getURL("icons/icon128.png") : "icons/icon128.png";
+    var iconUrl = globalThis.chrome.runtime.getURL ? globalThis.chrome.runtime.getURL("icons/extentionIcon.png") : "icons/extentionIcon.png";
     globalThis.chrome.notifications.create(notificationId, {
       type: "basic",
       iconUrl: iconUrl,

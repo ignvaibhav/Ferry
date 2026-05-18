@@ -11,7 +11,7 @@
       <header class="settings-header">
         <div class="brand-lockup">
           <div class="logo-mark">
-            <img src="icons/icon128.png" alt="" />
+            <img src="icons/extentionIcon.png" alt="Ferry icon" />
           </div>
           <div class="brand-copy">
             <p class="eyebrow">Ferry extension</p>
@@ -48,35 +48,6 @@
         <article class="settings-card">
           <div class="card-head">
             <div>
-              <p class="card-label">Companion App</p>
-              <h2>Island Status</h2>
-            </div>
-            <div id="desktop-link-state" class="mini-chip">Checking…</div>
-          </div>
-
-          <div class="info-list">
-            <div class="info-row">
-              <span class="info-key">Ferry version</span>
-              <span id="extension-version" class="info-value">0.0.0</span>
-            </div>
-            <div class="info-row">
-              <span class="info-key">Island version</span>
-              <span id="island-version" class="info-value">—</span>
-            </div>
-            <div class="info-row">
-              <span class="info-key">Local port</span>
-              <span id="island-port" class="info-value">—</span>
-            </div>
-            <div class="info-row">
-              <span class="info-key">Save folder</span>
-              <span id="download-dir-name" class="info-value">—</span>
-            </div>
-          </div>
-        </article>
-
-        <article class="settings-card">
-          <div class="card-head">
-            <div>
               <p class="card-label">Shortcuts</p>
               <h2>Open in Island</h2>
             </div>
@@ -93,16 +64,36 @@
         <article class="settings-card">
           <div class="card-head">
             <div>
-              <p class="card-label">Activity</p>
-              <h2>History</h2>
+              <p class="card-label">Companion App</p>
+              <h2>Ferry Status</h2>
             </div>
-            <div id="activity-count" class="mini-chip">0 items</div>
+            <div id="desktop-link-state" class="mini-chip">Checking…</div>
           </div>
 
-          <p class="card-copy">Clear the recent transfer list shown in the popup.</p>
+          <div class="info-list">
+            <div class="info-row">
+              <span class="info-key">Local port</span>
+              <span id="island-port" class="info-value">—</span>
+            </div>
+            <div class="info-row">
+              <span class="info-key">Save folder</span>
+              <span id="download-dir-name" class="info-value">—</span>
+            </div>
+            <div class="info-row">
+              <span class="info-key">Latest Island Release</span>
+              <span id="latest-release-version" class="info-value">Checking…</span>
+            </div>
+          </div>
 
-          <div class="action-row">
-            <button id="clear-extension-activity" class="action-btn danger-btn" type="button">Clear activity</button>
+          <div class="action-row" style="margin-top: 14px;">
+            <a id="open-project-github" class="action-btn" href="https://github.com/ignvaibhav/Ferry" target="_blank" rel="noopener noreferrer" style="text-decoration: none; display: inline-flex; align-items: center; gap: 8px;">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" aria-hidden="true"><path d="M12 .5C5.65.5.5 5.65.5 12A11.5 11.5 0 0 0 8.36 22.9c.58.1.79-.25.79-.56v-2.02c-3.18.69-3.85-1.35-3.85-1.35-.52-1.3-1.27-1.64-1.27-1.64-1.04-.71.08-.7.08-.7 1.15.08 1.75 1.18 1.75 1.18 1.02 1.76 2.68 1.25 3.34.95.1-.74.4-1.24.73-1.53-2.54-.29-5.21-1.27-5.21-5.65 0-1.25.44-2.27 1.17-3.07-.12-.29-.51-1.45.11-3.03 0 0 .96-.31 3.14 1.17A10.8 10.8 0 0 1 12 6.85c.97 0 1.95.13 2.86.39 2.18-1.48 3.14-1.17 3.14-1.17.62 1.58.23 2.74.11 3.03.73.8 1.17 1.82 1.17 3.07 0 4.39-2.67 5.35-5.22 5.64.41.36.78 1.06.78 2.14v3.18c0 .31.21.66.8.55A11.5 11.5 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z"></path></svg>
+              GitHub
+            </a>
+            <a id="open-project-site" class="action-btn" href="https://ignvaibhav.github.io/Ferry" target="_blank" rel="noopener noreferrer" style="text-decoration: none; display: inline-flex; align-items: center; gap: 8px;">
+              <img src="icons/extentionIcon.png" width="16" height="16" alt="Ferry icon" style="border-radius: 4px;" />
+              Website
+            </a>
           </div>
         </article>
       </section>
