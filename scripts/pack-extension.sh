@@ -10,6 +10,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 EXT_DIR="${ROOT_DIR}/extension"
 OUT_DIR="${1:-${ROOT_DIR}/dist}"
+# Ensure OUT_DIR is absolute so the cd command later doesn't break it
+if [[ "$OUT_DIR" != /* ]]; then
+  OUT_DIR="$PWD/$OUT_DIR"
+fi
 OUT_ZIP="${OUT_DIR}/ferry-extension.zip"
 
 if [[ ! -d "${EXT_DIR}" ]]; then
