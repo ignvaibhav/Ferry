@@ -142,9 +142,11 @@ async function loadContributors() {
     if (!container) return;
 
     let html = "";
+    const sizes = [38, 34, 30, 28, 28]; // Largest for top contributor
     contributors.forEach((c, idx) => {
-      html += `<a href="${c.html_url}" target="_blank" rel="noreferrer" title="${c.login}" style="z-index: ${10 - idx};">
-        <img src="${c.avatar_url}&s=48" alt="${c.login}">
+      const size = sizes[idx] || 28;
+      html += `<a href="${c.html_url}" target="_blank" rel="noreferrer" title="${c.login} (${c.contributions} contributions)" style="width: ${size}px; height: ${size}px; z-index: ${10 - idx};">
+        <img src="${c.avatar_url}&s=64" alt="${c.login}">
       </a>`;
     });
     
