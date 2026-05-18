@@ -20,13 +20,6 @@ var state = {
   healthOnline: false,
 };
 
-function formatVersionLabel(version) {
-  if (!version) return "v1";
-  if (version === "1" || version === "1.0" || version === "1.0.0") return "v1";
-  if (version.charAt(0).toLowerCase() === "v") return version;
-  return "v" + version;
-}
-
 function getStorage() {
   return globalThis.chrome && globalThis.chrome.storage && globalThis.chrome.storage.local;
 }
@@ -107,7 +100,7 @@ function updateHealthState(online, version) {
     statusEl.textContent = online ? "Island online" : "Island offline";
   }
   if (desktopLinkStateEl) {
-    desktopLinkStateEl.textContent = online ? ("Connected" + (version ? " (" + formatVersionLabel(version) + ")" : "")) : "Not reachable";
+    desktopLinkStateEl.textContent = online ? ("Connected" + (version ? " (" + version + ")" : "")) : "Not reachable";
   }
 }
 
@@ -123,7 +116,7 @@ function initMeta() {
   var runtime = globalThis.chrome && globalThis.chrome.runtime;
   if (runtime && typeof runtime.getManifest === "function" && versionEl) {
     var manifest = runtime.getManifest();
-    versionEl.textContent = formatVersionLabel(manifest && manifest.version ? manifest.version : "");
+    versionEl.textContent = manifest && manifest.version ? manifest.version : "0.0.0";
   }
 }
 

@@ -1,17 +1,17 @@
 :root {
   color-scheme: dark;
-  --ferry-bg: #0c0c0c;
-  --ferry-bg-soft: #141414;
-  --ferry-surface: #1a1a1a;
-  --ferry-surface-2: #222222;
-  --ferry-line: rgba(255, 255, 255, 0.08);
-  --ferry-line-strong: rgba(255, 255, 255, 0.14);
-  --ferry-text: #f0f0f0;
-  --ferry-text-soft: #888;
-  --ferry-text-muted: #555;
-  --ferry-blue: #3D8FF2;
-  --ferry-green: #B5F23D;
-  --ferry-red: #FF5C3A;
+  --ferry-bg: #050505;
+  --ferry-bg-soft: #0d0d0f;
+  --ferry-surface: rgba(20, 20, 22, 0.92);
+  --ferry-surface-2: rgba(30, 30, 33, 0.92);
+  --ferry-line: rgba(255, 255, 255, 0.1);
+  --ferry-line-strong: rgba(255, 255, 255, 0.18);
+  --ferry-text: #f5f5f3;
+  --ferry-text-soft: rgba(245, 245, 243, 0.72);
+  --ferry-text-muted: rgba(245, 245, 243, 0.48);
+  --ferry-blue: #4da3ff;
+  --ferry-green: #42d27d;
+  --ferry-red: #ff5d5d;
 }
 
 body[data-theme="light"] {
