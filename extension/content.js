@@ -165,13 +165,16 @@ function setProgress(panel, progress, speed, eta) {
   if (value >= 100) {
     box.style.display = "flex";
     text.textContent = "Downloaded!";
+    text.style.color = "";
     if (dlBtn) {
       dlBtn.innerHTML = 'Download';
       dlBtn.disabled = false;
     }
   } else {
-    box.style.display = "none";
-    if (dlBtn) dlBtn.disabled = false;
+    box.style.display = "flex";
+    text.textContent = `${value}%`;
+    text.style.color = "";
+    if (dlBtn) dlBtn.disabled = true;
   }
 }
 
