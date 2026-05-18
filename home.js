@@ -107,11 +107,21 @@ async function syncLatestRelease() {
     const releaseUrl = typeof data.html_url === "string" ? data.html_url : FALLBACK_RELEASE_URL;
     const assetUrl = getAssetForOS(data.assets || [], os);
     const extAsset = (data.assets || []).find((a) => /ferry-extension\.zip$/i.test(a.name));
+    
+    // Update step 2 button
     const extDownloadBtn = document.getElementById("ext-download-btn");
     if (extDownloadBtn && extAsset) {
       extDownloadBtn.href = extAsset.browser_download_url;
     } else if (extDownloadBtn) {
       extDownloadBtn.href = releaseUrl;
+    }
+
+    // Update hero button
+    const heroExtBtn = document.getElementById("hero-ext-btn");
+    if (heroExtBtn && extAsset) {
+      heroExtBtn.href = extAsset.browser_download_url;
+    } else if (heroExtBtn) {
+      heroExtBtn.href = releaseUrl;
     }
 
     releaseLinks.forEach((link) => {
