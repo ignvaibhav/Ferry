@@ -14,7 +14,7 @@ Ferry is a browser extension that injects a native-feeling download UI on top of
 [![Rust](https://img.shields.io/badge/Rust-backend-B5F23D?labelColor=111111&logo=rust&logoColor=white)](./app/src-tauri)
 [![Local First](https://img.shields.io/badge/local--first-no%20cloud-B5F23D?labelColor=111111)](https://github.com/ignvaibhav/Ferry)
 
-[**Download for macOS →**](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.3) &nbsp;·&nbsp; [Website](https://ignvaibhav.github.io/Ferry) &nbsp;·&nbsp; [Bug Report](https://github.com/ignvaibhav/Ferry/issues/new?template=bug_report.md) &nbsp;·&nbsp; [Feature Request](https://github.com/ignvaibhav/Ferry/issues/new?template=feature_request.md)
+[**Download for macOS →**](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.3) &nbsp;·&nbsp; [Website](https://ferryisland.vercel.app/) &nbsp;·&nbsp; [Bug Report](https://github.com/ignvaibhav/Ferry/issues/new?template=bug_report.md) &nbsp;·&nbsp; [Feature Request](https://github.com/ignvaibhav/Ferry/issues/new?template=feature_request.md)
 
 </div>
 
