@@ -134,28 +134,48 @@ async function syncLatestRelease() {
 }
 
 async function loadContributors() {
-  try {
-    const res = await fetch("https://api.github.com/repos/ignvaibhav/Ferry/contributors?per_page=5");
-    if (!res.ok) return;
-    const contributors = await res.json();
-    const container = document.getElementById("github-contributors");
-    if (!container) return;
+  const container = document.getElementById("github-contributors");
+  if (!container) return;
 
-    let html = "";
-    const sizes = [38, 34, 30, 28, 28]; // Largest for top contributor
-    contributors.forEach((c, idx) => {
-      const size = sizes[idx] || 28;
-      html += `<a href="${c.html_url}" target="_blank" rel="noreferrer" title="${c.login} (${c.contributions} contributions)" style="width: ${size}px; height: ${size}px; z-index: ${10 - idx};">
-        <img src="${c.avatar_url}&s=64" alt="${c.login}">
-      </a>`;
-    });
-    
-    // Check if there are more than 5 contributors to show a +X indicator, if desired (optional)
-    // For now just show the avatars
-    container.innerHTML = html;
+  const CACHE_KEY = "ferry_contributors";
+  const CACHE_TIME = 1000 * 60 * 60; // 1 hour
+
+  let contributors = [
+    { login: "ignvaibhav", avatar_url: "https://github.com/ignvaibhav.png", html_url: "https://github.com/ignvaibhav", contributions: 100 }
+  ];
+
+  try {
+    const cached = localStorage.getItem(CACHE_KEY);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Date.now() - parsed.timestamp < CACHE_TIME) {
+        contributors = parsed.data;
+      }
+    }
+
+    if (contributors.length === 1) { // Only fetch if we don't have valid cache
+      const res = await fetch("https://api.github.com/repos/ignvaibhav/Ferry/contributors?per_page=5");
+      if (res.ok) {
+        contributors = await res.json();
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ timestamp: Date.now(), data: contributors }));
+      } else {
+        console.warn("GitHub API rate limit exceeded. Using fallback contributors.");
+      }
+    }
   } catch (err) {
     console.error("Failed to load contributors:", err);
   }
+
+  let html = "";
+  const sizes = [38, 34, 30, 28, 28]; // Largest for top contributor
+  contributors.forEach((c, idx) => {
+    const size = sizes[idx] || 28;
+    html += `<a href="${c.html_url}" target="_blank" rel="noreferrer" title="${c.login} (${c.contributions || ''} contributions)" style="width: ${size}px; height: ${size}px; z-index: ${10 - idx};">
+      <img src="${c.avatar_url}" alt="${c.login}">
+    </a>`;
+  });
+  
+  container.innerHTML = html;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
