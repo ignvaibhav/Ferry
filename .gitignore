@@ -2,3 +2,7 @@
 .agents/
 ClipDrop-master/
 app/src-tauri/target/
+app/src-tauri/test_video.mp4
+fetch_shorts.js
+test_regex.rs
+test_shorts_selector.js
