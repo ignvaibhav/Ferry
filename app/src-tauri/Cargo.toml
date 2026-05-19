@@ -1,6 +1,6 @@
 [package]
 name = "island-desktop"
-version = "1.0.0"
+version = "1.0.6"
 edition = "2021"
 description = "Local-first media downloader desktop companion"
 license = "MIT"

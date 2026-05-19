@@ -6,13 +6,13 @@
 
 Ferry is a browser extension that injects a native-feeling download UI on top of any yt-dlp supported page. Island is the local desktop engine (macOS, Windows, Linux) that runs the actual download — no cloud, no accounts, no commands.
 
-[![Version](https://img.shields.io/badge/version-1.0.5-B5F23D?labelColor=111111)](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.5)
-[![macOS](https://img.shields.io/badge/macOS-supported-B5F23D?labelColor=111111&logo=apple&logoColor=white)](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.5)
-[![Windows](https://img.shields.io/badge/Windows-beta-B5F23D?labelColor=111111&logo=windows&logoColor=white)](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.5)
-[![Linux](https://img.shields.io/badge/Linux-beta-B5F23D?labelColor=111111&logo=linux&logoColor=white)](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.5)
+[![Version](https://img.shields.io/badge/version-1.0.6-B5F23D?labelColor=111111)](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.6)
+[![macOS](https://img.shields.io/badge/macOS-supported-B5F23D?labelColor=111111&logo=apple&logoColor=white)](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.6)
+[![Windows](https://img.shields.io/badge/Windows-beta-B5F23D?labelColor=111111&logo=windows&logoColor=white)](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.6)
+[![Linux](https://img.shields.io/badge/Linux-beta-B5F23D?labelColor=111111&logo=linux&logoColor=white)](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.6)
 [![License](https://img.shields.io/badge/license-MIT-B5F23D?labelColor=111111)](./LICENSE)
 
-[**Download for macOS/Windows/Linux →**](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.5) &nbsp;·&nbsp; [Website Live Preview](https://ferryisland.vercel.app/) &nbsp;·&nbsp; [Bug Report](https://github.com/ignvaibhav/Ferry/issues/new?template=bug_report.md) &nbsp;·&nbsp; [Feature Request](https://github.com/ignvaibhav/Ferry/issues/new?template=feature_request.md)
+[**Download for macOS/Windows/Linux →**](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.6) &nbsp;·&nbsp; [Website Live Preview](https://ferryisland.vercel.app/) &nbsp;·&nbsp; [Bug Report](https://github.com/ignvaibhav/Ferry/issues/new?template=bug_report.md) &nbsp;·&nbsp; [Feature Request](https://github.com/ignvaibhav/Ferry/issues/new?template=feature_request.md)
 
 </div>
 
@@ -89,7 +89,7 @@ Island  (127.0.0.1:49152)
 
 **1. Download and launch Island**
 
-Download your platform's installer from [Releases](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.5), and open Island. It runs quietly in the background.
+Download your platform's installer from [Releases](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.6), and open Island. It runs quietly in the background.
 
 > **Gatekeeper note (macOS):** Builds aren't notarized yet. If macOS blocks Island on first open, right-click → Open.
 
