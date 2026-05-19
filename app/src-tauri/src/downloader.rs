@@ -34,6 +34,15 @@ static PROGRESS_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\[download\]\s+(\d{1,3}(?:\.\d+)?)%").unwrap());
 static SPEED_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bat\s+([^\s]+)").unwrap());
 static ETA_RE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\bETA\s+([^\s]+)").unwrap());
+// ffmpeg progress parsing for HLS and merge downloads
+static FFMPEG_TIME_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"time=(\d+):(\d+):(\d+\.?\d*)").unwrap());
+// Match dur= in URLs (both url-encoded dur%3D and plain dur=)
+static URL_DUR_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"dur(?:%3D|=)(\d+\.?\d*)").unwrap());
+// Match ffmpeg's own "Duration: HH:MM:SS.ss" line
+static FFMPEG_DUR_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"Duration:\s*(\d+):(\d+):(\d+\.?\d*)").unwrap());
 
 /// Events emitted during a download for progress tracking.
 #[derive(Debug, Clone)]
@@ -155,6 +164,11 @@ async fn execute_download(
                     "yt-dlp progress"
                 );
 
+                println!(
+                    "[Ferry App] yt-dlp progress: job={} percent={}%",
+                    job_id_out, percent
+                );
+
                 let _ = tx_out
                     .send(DownloadEvent::Progress {
                         percent,
@@ -172,6 +186,7 @@ async fn execute_download(
 
             info!(job_id = %job_id_out, line = %trimmed, "yt-dlp stdout");
 
+            // "[download] /path/file.mp4 has already been downloaded"
             if trimmed.starts_with("[download]") && trimmed.ends_with("has already been downloaded")
             {
                 let entry = trimmed
@@ -185,6 +200,28 @@ async fn execute_download(
                 continue;
             }
 
+            // "[download] Destination: /path/file.mp4"
+            if trimmed.starts_with("[download] Destination:") {
+                let entry = trimmed.trim_start_matches("[download] Destination:").trim();
+                if !entry.is_empty() {
+                    final_path = Some(entry.to_string());
+                }
+                continue;
+            }
+
+            // "[Merger] Merging formats into \"/path/file.mp4\""
+            if trimmed.starts_with("[Merger] Merging formats into") {
+                let entry = trimmed
+                    .trim_start_matches("[Merger] Merging formats into")
+                    .trim()
+                    .trim_matches('"');
+                if !entry.is_empty() {
+                    final_path = Some(entry.to_string());
+                }
+                continue;
+            }
+
+            // Bare line (not bracket-prefixed) = final filepath
             if !trimmed.starts_with('[') {
                 final_path = Some(trimmed.to_string());
             }
@@ -193,17 +230,134 @@ async fn execute_download(
         (job_id_out, final_path)
     });
 
+    let tx_err = tx.clone();
     let err_task = tokio::spawn(async move {
-        let mut lines = BufReader::new(stderr).lines();
+        let mut reader = BufReader::new(stderr);
         let mut last_error: Option<String> = None;
-        while let Ok(Some(line)) = lines.next_line().await {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
+        let mut total_duration: Option<f64> = None;
+        let mut last_ffmpeg_pct: u8 = 0;
+        let mut buf = Vec::with_capacity(4096);
+
+        // Read stderr byte-by-byte, splitting on \r or \n.
+        // ffmpeg writes progress updates using \r (carriage return) to
+        // overwrite the same line. BufReader::lines() only splits on \n,
+        // so it misses all progress updates until the very end.
+        loop {
+            let mut byte = [0u8; 1];
+            match tokio::io::AsyncReadExt::read(&mut reader, &mut byte).await {
+                Ok(0) => break, // EOF
+                Ok(_) => {
+                    if byte[0] == b'\n' || byte[0] == b'\r' {
+                        if buf.is_empty() {
+                            continue;
+                        }
+                        let line = String::from_utf8_lossy(&buf).to_string();
+                        buf.clear();
+                        let trimmed = line.trim();
+                        if trimmed.is_empty() {
+                            continue;
+                        }
+
+                        // Don't spam log ffmpeg's verbose output
+                        if !trimmed.starts_with("frame=")
+                            && !trimmed.contains("[https @")
+                            && !trimmed.contains("[in#")
+                        {
+                            warn!(job_id = %job_id_err, line = %trimmed, "yt-dlp stderr");
+                        }
+
+                        if trimmed.starts_with("ERROR:") || trimmed.starts_with("WARNING:") {
+                            last_error = Some(trimmed.to_string());
+                            continue;
+                        }
+
+                        // Track last meaningful non-progress stderr as fallback error
+                        if !trimmed.starts_with("frame=")
+                            && !trimmed.contains("[https @")
+                            && !trimmed.contains("[in#")
+                            && !trimmed.starts_with("[libx264")
+                            && !trimmed.starts_with("[aac @")
+                            && !trimmed.starts_with("Stream")
+                            && !trimmed.starts_with("Output")
+                            && !trimmed.starts_with("Metadata:")
+                            && !trimmed.starts_with("Input")
+                        {
+                            last_error = Some(trimmed.to_string());
+                        }
+
+                        // Extract total duration from ffmpeg's Duration: line or URL dur= param
+                        if total_duration.is_none() {
+                            if let Some(caps) = FFMPEG_DUR_RE.captures(trimmed) {
+                                let h = caps
+                                    .get(1)
+                                    .and_then(|m| m.as_str().parse::<f64>().ok())
+                                    .unwrap_or(0.0);
+                                let m = caps
+                                    .get(2)
+                                    .and_then(|m| m.as_str().parse::<f64>().ok())
+                                    .unwrap_or(0.0);
+                                let s = caps
+                                    .get(3)
+                                    .and_then(|m| m.as_str().parse::<f64>().ok())
+                                    .unwrap_or(0.0);
+                                total_duration = Some(h * 3600.0 + m * 60.0 + s);
+                            } else if let Some(caps) = URL_DUR_RE.captures(trimmed) {
+                                total_duration =
+                                    caps.get(1).and_then(|m| m.as_str().parse::<f64>().ok());
+                            }
+                        }
+
+                        // Extract ffmpeg time= progress and calculate percentage
+                        if let Some(dur) = total_duration {
+                            if dur > 0.0 {
+                                if let Some(caps) = FFMPEG_TIME_RE.captures(trimmed) {
+                                    let h = caps
+                                        .get(1)
+                                        .and_then(|m| m.as_str().parse::<f64>().ok())
+                                        .unwrap_or(0.0);
+                                    let m = caps
+                                        .get(2)
+                                        .and_then(|m| m.as_str().parse::<f64>().ok())
+                                        .unwrap_or(0.0);
+                                    let s = caps
+                                        .get(3)
+                                        .and_then(|m| m.as_str().parse::<f64>().ok())
+                                        .unwrap_or(0.0);
+                                    let current = h * 3600.0 + m * 60.0 + s;
+                                    let pct = ((current / dur) * 100.0).min(99.0) as u8;
+                                    // Only send if changed by at least 1%
+                                    if pct > last_ffmpeg_pct {
+                                        last_ffmpeg_pct = pct;
+                                        let _ = tx_err
+                                            .send(DownloadEvent::Progress {
+                                                percent: pct,
+                                                speed: None,
+                                                eta: None,
+                                            })
+                                            .await;
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        buf.push(byte[0]);
+                    }
+                }
+                Err(_) => break,
             }
-            warn!(job_id = %job_id_err, line = %trimmed, "yt-dlp stderr");
-            if trimmed.starts_with("ERROR:") {
-                last_error = Some(trimmed.to_string());
+        }
+        // Process any remaining data in the buffer (last line without \r or \n)
+        if !buf.is_empty() {
+            let line = String::from_utf8_lossy(&buf).to_string();
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                if trimmed.starts_with("ERROR:") {
+                    last_error = Some(trimmed.to_string());
+                } else if last_error.is_none() {
+                    // Use last meaningful stderr line as fallback error
+                    last_error = Some(trimmed.to_string());
+                }
+                warn!(job_id = %job_id_err, line = %trimmed, "yt-dlp stderr (final)");
             }
         }
         (job_id_err, last_error)
@@ -211,11 +365,12 @@ async fn execute_download(
 
     let status = loop {
         if cancel_flag.load(Ordering::SeqCst) {
+            warn!(job_id, "cancel flag detected, killing process");
             if let Some(pid) = child_pid {
-                terminate_process(pid).await;
-            } else {
-                let _ = child.kill().await;
+                terminate_process_group(pid).await;
             }
+            let _ = child.kill().await;
+            let _ = child.wait().await;
             let message = "Cancelled by user".to_string();
             let _ = tx
                 .send(DownloadEvent::Error {
@@ -267,7 +422,9 @@ fn build_download_command(
     output_template: &str,
 ) -> Command {
     let mut cmd = Command::new(binary);
-    cmd.arg("--newline")
+    cmd.env("PYTHONUNBUFFERED", "1")
+        .arg("--newline")
+        .arg("--progress")
         .arg("--no-warnings")
         .arg("--no-overwrites")
         .arg("--no-post-overwrites")
@@ -281,16 +438,14 @@ fn build_download_command(
         .arg("--file-access-retries")
         .arg("3")
         .arg("--extractor-args")
-        .arg(EXTRACTOR_ARGS);
+        .arg(EXTRACTOR_ARGS)
+        .arg("--hls-prefer-native");
 
     if let Some(location) = ffmpeg_location {
         cmd.arg("--ffmpeg-location").arg(location);
     }
 
-    cmd.arg("-o")
-        .arg(output_template)
-        .arg("--print")
-        .arg("after_move:filepath");
+    cmd.arg("-o").arg(output_template);
 
     apply_format_flags(request, &mut cmd);
 
@@ -312,8 +467,10 @@ fn build_download_command(
 
     let source_url = request_source_url(request);
     cmd.arg(&source_url)
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
     cmd
 }
 
@@ -518,7 +675,7 @@ fn humanize_download_error(message: &str) -> String {
     trimmed.to_string()
 }
 
-async fn terminate_process(pid: u32) {
+async fn terminate_process_group(pid: u32) {
     #[cfg(target_os = "windows")]
     {
         if let Ok(mut child) = Command::new("taskkill")
@@ -536,8 +693,20 @@ async fn terminate_process(pid: u32) {
 
     #[cfg(not(target_os = "windows"))]
     {
+        // Kill the entire process group (yt-dlp + ffmpeg children)
+        // First try SIGKILL on the process group (-pid)
         if let Ok(mut child) = Command::new("kill")
-            .arg("-TERM")
+            .arg("-9")
+            .arg(format!("-{}", pid))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+        {
+            let _ = child.wait().await;
+        }
+        // Also kill the specific pid in case it wasn't in a group
+        if let Ok(mut child) = Command::new("kill")
+            .arg("-9")
             .arg(pid.to_string())
             .stdout(Stdio::null())
             .stderr(Stdio::null())

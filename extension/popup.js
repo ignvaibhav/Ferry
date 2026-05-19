@@ -26,6 +26,7 @@ var state = {
   items: [],
   health: null,
   themeMode: "system",
+  liveProgress: {},
 };
 
 function getStorage() {
@@ -142,7 +143,8 @@ function getStatusText(item) {
   if (item.state === "error") return "Error";
   if (item.state === "queued") return "Queued";
   if (item.state === "progress") {
-    return item.speed ? item.speed : "Downloading";
+    var pct = typeof item.progress === "number" ? item.progress : 0;
+    return pct + "%";
   }
   return "Unknown";
 }
@@ -151,6 +153,17 @@ function getMediaBadge(item) {
   if (item.mediaType === "audio") return "Audio";
   if (item.mediaType === "thumbnail") return "Thumb";
   return "Video";
+}
+
+function getSourceKindBadge(item) {
+  if (item.sourceKind === "short") return "Short";
+  if (item.sourceKind === "long") return "Long";
+  try {
+    var parsed = new URL(item.sourceUrl || "");
+    return parsed.pathname.indexOf("/shorts/") === 0 ? "Short" : "Long";
+  } catch (error) {
+    return "Long";
+  }
 }
 
 function getJobMetaLine(item) {
@@ -227,13 +240,30 @@ function createJobCard(item) {
   var qualityText = getJobQuality(item);
   var actionMarkup = getJobActionMarkup(item);
   var mediaBadge = getMediaBadge(item);
+  var sourceKindBadge = getSourceKindBadge(item);
   
   var qualityBadge = qualityText ? '<span class="transfer-badge transfer-badge-quality" style="margin-left: 6px;">' + escapeHtml(qualityText) + '</span>' : '';
-  var statusBadge = '<span class="transfer-badge transfer-badge-status transfer-status" style="margin-left: 6px;">' + escapeHtml(statusText) + '</span>';
+  var sourceBadge = '<span class="transfer-badge transfer-badge-source" style="margin-left: 6px;">' + escapeHtml(sourceKindBadge) + '</span>';
   
-  var badges = '<span class="transfer-badge transfer-badge-media">' + escapeHtml(mediaBadge) + '</span>' + qualityBadge + statusBadge;
+  // Progress/status badge: single source of truth
+  var progressBadge = '';
+  if (item.state === "done") {
+    progressBadge = '<span class="transfer-badge transfer-badge-done" style="margin-left: 6px;">Done</span>';
+  } else if (item.state === "error") {
+    progressBadge = '<span class="transfer-badge transfer-badge-error" style="margin-left: 6px;">Error</span>';
+  } else if (item.state === "progress") {
+    var pct = typeof item.progress === "number" ? item.progress : 0;
+    if (typeof state.liveProgress[item.jobId] === "number" && state.liveProgress[item.jobId] > pct) {
+      pct = state.liveProgress[item.jobId];
+    }
+    progressBadge = '<span class="transfer-badge transfer-badge-active" style="margin-left: 6px;"><span class="ferry-spinner"></span><span class="transfer-pct">' + pct + '%</span></span>';
+  } else {
+    progressBadge = '<span class="transfer-badge transfer-badge-queued" style="margin-left: 6px;">Queued</span>';
+  }
+  
+  var badges = '<span class="transfer-badge transfer-badge-media">' + escapeHtml(mediaBadge) + '</span>' + sourceBadge + qualityBadge + progressBadge;
   var actionsHtml = actionMarkup ? '<div class="transfer-actions">' + actionMarkup + '</div>' : '';
-  
+
   var html = 
     '<div class="transfer-thumb">' + getThumbnailMarkup(item) + '</div>' +
     '<div class="transfer-info">' +
@@ -246,36 +276,6 @@ function createJobCard(item) {
     actionsHtml;
 
   card.innerHTML = html;
-
-  var actionBtns = card.querySelectorAll(".transfer-action-btn");
-  actionBtns.forEach(function(btn) {
-    btn.onclick = function(e) {
-      e.stopPropagation();
-      var action = btn.dataset.action;
-      if (action === "reveal") {
-        revealPath(btn.dataset.path).then(function(result) {
-          if (result && result.ok === false) refreshHealthState();
-        });
-        return;
-      }
-      if (action === "open") {
-        openPath(btn.dataset.path).then(function(result) {
-          if (result && result.ok === false) refreshHealthState();
-        });
-        return;
-      }
-      if (action === "cancel") {
-        cancelJob(btn.dataset.jobId).then(function(result) {
-          if (result && result.ok === false) {
-            return refreshHealthState().then(loadActivity);
-          }
-          return loadActivity();
-        });
-        return;
-      }
-    };
-  });
-
   return card;
 }
 
@@ -285,7 +285,7 @@ function getJobActionMarkup(item) {
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>' +
     '</button>';
   }
-  if (item.state === "progress") {
+  if (item.state === "progress" || item.state === "queued") {
     return '<button class="transfer-action-btn action-cancel" title="Cancel" aria-label="Cancel" data-action="cancel" data-job-id="' + escapeHtml(item.jobId) + '">' +
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"/></svg>' +
     '</button>';
@@ -341,18 +341,45 @@ function updateJobCardInline(payload) {
     return;
   }
 
-  var statusLine = card.querySelector(".transfer-status");
+  // Find the last badge in the badge row — that's our progress badge
+  var badgeRow = card.querySelector(".transfer-badge-row");
+  var activeBadge = badgeRow ? badgeRow.querySelector(".transfer-badge-active, .transfer-badge-queued, .transfer-badge-done, .transfer-badge-error") : null;
 
-  if (statusLine) {
-    if (payload.event === "progress") {
-      statusLine.textContent = "Downloading...";
-    } else if (payload.event === "done") {
-      statusLine.textContent = "";
-      setTimeout(loadActivity, 800);
-    } else if (payload.event === "error") {
-      statusLine.textContent = "Error";
-      setTimeout(loadActivity, 800);
+  if (payload.event === "progress") {
+    var pct = typeof payload.percent === "number" ? payload.percent : 0;
+    state.liveProgress[payload.job_id] = pct;
+
+    if (activeBadge) {
+      // Replace with active badge if it was queued
+      if (!activeBadge.classList.contains("transfer-badge-active")) {
+        var newBadge = document.createElement("span");
+        newBadge.className = "transfer-badge transfer-badge-active";
+        newBadge.style.marginLeft = "6px";
+        newBadge.innerHTML = '<span class="ferry-spinner"></span><span class="transfer-pct">' + pct + '%</span>';
+        activeBadge.replaceWith(newBadge);
+      } else {
+        var pctEl = activeBadge.querySelector(".transfer-pct");
+        if (pctEl) pctEl.textContent = pct + "%";
+      }
     }
+  } else if (payload.event === "done") {
+    if (activeBadge) {
+      var doneBadge = document.createElement("span");
+      doneBadge.className = "transfer-badge transfer-badge-done";
+      doneBadge.style.marginLeft = "6px";
+      doneBadge.textContent = "Done";
+      activeBadge.replaceWith(doneBadge);
+    }
+    setTimeout(loadActivity, 800);
+  } else if (payload.event === "error") {
+    if (activeBadge) {
+      var errBadge = document.createElement("span");
+      errBadge.className = "transfer-badge transfer-badge-error";
+      errBadge.style.marginLeft = "6px";
+      errBadge.textContent = "Error";
+      activeBadge.replaceWith(errBadge);
+    }
+    setTimeout(loadActivity, 800);
   }
 }
 
@@ -372,6 +399,17 @@ function loadActivity() {
 
   return safeSendMessage({ type: "GET_ACTIVITY" }).then(function(response) {
     var items = (response && response.items) || [];
+    // Merge live progress into items so re-renders don't flicker back to "queued"
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (item && item.jobId && typeof state.liveProgress[item.jobId] === "number") {
+        var livePct = state.liveProgress[item.jobId];
+        if (livePct > 0 && (item.state === "queued" || item.state === "progress")) {
+          item.state = "progress";
+          item.progress = livePct;
+        }
+      }
+    }
     renderJobList(items);
     isActivityLoading = false;
     processBuffer();
@@ -450,6 +488,38 @@ function init() {
   loadActivity().then(function() {
     isInitialLoading = false;
   });
+
+  // Event delegation for action buttons — survives re-renders
+  if (jobListEl) {
+    jobListEl.addEventListener("click", function(e) {
+      console.log("[Ferry Popup] jobList click, target:", e.target.tagName, e.target.className, "closest btn:", e.target.closest(".transfer-action-btn"));
+      var btn = e.target.closest(".transfer-action-btn");
+      if (!btn) return;
+      e.stopPropagation();
+      var action = btn.dataset.action;
+      console.log("[Ferry Popup] Action button clicked:", action, "jobId:", btn.dataset.jobId);
+      if (action === "reveal") {
+        revealPath(btn.dataset.path).then(function(result) {
+          if (result && result.ok === false) refreshHealthState();
+        });
+      } else if (action === "open") {
+        openPath(btn.dataset.path).then(function(result) {
+          if (result && result.ok === false) refreshHealthState();
+        });
+      } else if (action === "cancel") {
+        var jobId = btn.dataset.jobId;
+        console.log("[Ferry Popup] Cancel clicked, jobId:", jobId);
+        if (!jobId) return;
+        cancelJob(jobId).then(function(result) {
+          console.log("[Ferry Popup] Cancel result:", JSON.stringify(result));
+          if (result && result.ok === false) {
+            return refreshHealthState().then(loadActivity);
+          }
+          return loadActivity();
+        });
+      }
+    });
+  }
 
   refreshTimer = setInterval(loadActivity, 2500);
 

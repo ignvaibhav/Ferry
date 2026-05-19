@@ -243,6 +243,91 @@
         color: var(--muted);
       }
 
+      .release-panel {
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 0.5px solid var(--border);
+      }
+
+      .release-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+      }
+
+      .release-copy {
+        display: grid;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .release-heading-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .release-heading {
+        font-size: 10px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .release-text {
+        margin: 0;
+        font-size: 12px;
+        line-height: 1.45;
+        color: var(--text);
+        max-width: 48ch;
+      }
+
+      .release-note {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .release-note strong {
+        color: var(--text);
+        font-weight: 500;
+      }
+
+      .release-side {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 10px;
+        flex: none;
+      }
+
+      .download-update-btn {
+        min-height: 38px;
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #101106;
+        font-weight: 600;
+      }
+
+      .download-update-btn:hover:not(:disabled) {
+        background: #c0f75a;
+        border-color: #c0f75a;
+      }
+
+      @media (max-width: 640px) {
+        .release-header {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .release-side {
+          align-self: flex-start;
+          align-items: flex-start;
+        }
+      }
+
       .feedback-banner {
         margin-top: 12px;
         min-height: 0;
@@ -256,6 +341,10 @@
 
       .feedback-banner[data-tone="error"] {
         color: var(--accent-warm);
+      }
+
+      [hidden] {
+        display: none !important;
       }
     </style>
   </head>
@@ -294,12 +383,19 @@
             <button id="reset-btn" class="action-btn" type="button">Reset to default</button>
           </div>
 
-          <div class="meta-strip">
-            <div class="meta-copy">
-              <span class="meta-label">Release status</span>
-              <span id="release-status" class="meta-value">Checking GitHub Releases…</span>
+          <div class="release-panel">
+            <div class="release-header">
+              <div class="release-copy">
+                <div class="release-heading-row">
+                  <span class="release-heading">Release status</span>
+                  <div id="release-pill" class="pill">Checking…</div>
+                </div>
+                <p id="release-status" class="release-text">Checking GitHub Releases…</p>
+              </div>
+              <div class="release-side">
+                <button id="download-update-btn" class="action-btn download-update-btn" type="button" hidden>Download latest build</button>
+              </div>
             </div>
-            <div id="release-pill" class="pill">Checking…</div>
           </div>
 
           <div id="message" class="feedback-banner" aria-live="polite"></div>
@@ -323,12 +419,15 @@
       const statusPill = document.getElementById("status-pill");
       const releaseStatus = document.getElementById("release-status");
       const releasePill = document.getElementById("release-pill");
+      const downloadUpdateBtn = document.getElementById("download-update-btn");
 
-      const PROJECT_WEBSITE_URL = "https://ignvaibhav.github.io/Ferry";
+      const PROJECT_WEBSITE_URL = "https://ferryisland.vercel.app/";
       const PROJECT_GITHUB_URL = "https://github.com/ignvaibhav/Ferry";
       const LATEST_RELEASE_API = "https://api.github.com/repos/ignvaibhav/Ferry/releases/latest";
       let currentDesktopVersion = "";
       let latestReleaseUrl = PROJECT_GITHUB_URL + "/releases/latest";
+      let latestReleaseVersion = "";
+      let latestReleaseAsset = null;
 
       function setFeedback(text, tone) {
         message.textContent = text || "";
@@ -349,6 +448,30 @@
         if (!releasePill) return;
         releasePill.className = "pill" + (pillTone ? " " + pillTone : "");
         releasePill.textContent = pillText;
+      }
+
+      function getPreferredAssetName() {
+        const userAgent = navigator.userAgent || "";
+        if (/Macintosh|Mac OS X/i.test(userAgent)) return "Island-macOS-app.zip";
+        if (/Windows/i.test(userAgent)) return "Island-windows-setup.exe";
+        return "Island-linux.AppImage";
+      }
+
+      function setUpdateButton(asset, version, visible) {
+        latestReleaseAsset = asset || null;
+        latestReleaseVersion = version || "";
+        if (!downloadUpdateBtn) return;
+
+        if (!visible || !asset) {
+          downloadUpdateBtn.hidden = true;
+          downloadUpdateBtn.textContent = "Download latest build";
+          downloadUpdateBtn.disabled = false;
+          return;
+        }
+
+        downloadUpdateBtn.hidden = false;
+        downloadUpdateBtn.textContent = "Download v" + version;
+        downloadUpdateBtn.disabled = false;
       }
 
       function normalizeVersion(version) {
@@ -390,6 +513,7 @@
 
       async function loadLatestReleaseInfo() {
         setReleaseState("Checking GitHub Releases…", "Checking…", "");
+        setUpdateButton(null, "", false);
 
         try {
           const response = await fetch(LATEST_RELEASE_API, {
@@ -404,6 +528,10 @@
 
           const data = await response.json();
           const latestVersion = normalizeVersion(data.tag_name || "");
+          const preferredAssetName = getPreferredAssetName();
+          const preferredAsset = Array.isArray(data.assets)
+            ? data.assets.find((asset) => asset && asset.name === preferredAssetName)
+            : null;
           latestReleaseUrl = typeof data.html_url === "string" ? data.html_url : latestReleaseUrl;
 
           if (!latestVersion) {
@@ -417,6 +545,7 @@
               "Update · v" + latestVersion,
               "pill-update"
             );
+            setUpdateButton(preferredAsset, latestVersion, Boolean(preferredAsset));
             return;
           }
 
@@ -426,12 +555,15 @@
               "Up to date · v" + latestVersion,
               "pill-live"
             );
+            setUpdateButton(null, latestVersion, false);
             return;
           }
 
           setReleaseState("Latest published build found on GitHub Releases.", "Latest · v" + latestVersion, "pill-live");
+          setUpdateButton(null, latestVersion, false);
         } catch {
           setReleaseState("GitHub Releases could not be reached right now.", "Unavailable", "pill-error");
+          setUpdateButton(null, "", false);
         }
       }
 
@@ -460,6 +592,43 @@
           await invoke("open_external_url", { url });
         } catch (error) {
           setFeedback(String(error || "Could not open link"), "error");
+        }
+      }
+
+      async function downloadLatestUpdate() {
+        if (!invoke) {
+          setFeedback("Tauri bridge not available in this window.", "error");
+          return;
+        }
+
+        if (!latestReleaseAsset || !latestReleaseAsset.browser_download_url || !latestReleaseAsset.name) {
+          setFeedback("No downloadable update asset is available for this Mac yet.", "error");
+          return;
+        }
+
+        setBusy(downloadUpdateBtn, true);
+        setFeedback("Downloading the latest Island build…", "success");
+
+        try {
+          const result = await invoke("download_release_asset", {
+            version: latestReleaseVersion || "latest",
+            assetName: latestReleaseAsset.name,
+            assetUrl: latestReleaseAsset.browser_download_url,
+          });
+
+          const extractedPath = result.extracted_app_path || "";
+          if (extractedPath) {
+            setFeedback(
+              "Latest build downloaded and unpacked. Finder opened the new Island.app so you can replace the current app.",
+              "success"
+            );
+          } else {
+            setFeedback("Latest build downloaded. Finder opened the downloaded release asset.", "success");
+          }
+        } catch (error) {
+          setFeedback(String(error || "Failed to download the latest build"), "error");
+        } finally {
+          setBusy(downloadUpdateBtn, false);
         }
       }
 
@@ -521,6 +690,7 @@
       resetBtn.addEventListener("click", resetFolder);
       openProjectSiteBtn.addEventListener("click", () => openExternalUrl(PROJECT_WEBSITE_URL));
       openProjectGitHubBtn.addEventListener("click", () => openExternalUrl(PROJECT_GITHUB_URL));
+      downloadUpdateBtn.addEventListener("click", downloadLatestUpdate);
 
       loadSettings();
       checkApiStatus().then(loadLatestReleaseInfo);

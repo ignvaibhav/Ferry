@@ -231,6 +231,7 @@ function queueActivityUpdate(jobId, updates) {
           progress: 0,
           thumbnailUrl: "",
           sourceUrl: "",
+          sourceKind: "",
           mediaType: "video",
           qualityLabel: "",
           formatLabel: "",
@@ -282,6 +283,15 @@ function extractVideoIdFromUrl(rawUrl) {
 
 function getFormatPrefetchKey(rawUrl) {
   return extractVideoIdFromUrl(rawUrl) || rawUrl || "";
+}
+
+function getSourceKindFromUrl(rawUrl) {
+  try {
+    var parsed = new URL(rawUrl || "");
+    return parsed.pathname.indexOf("/shorts/") === 0 ? "short" : "long";
+  } catch (err) {
+    return "";
+  }
 }
 
 function createPrefetchSnapshot(entry) {
@@ -460,6 +470,7 @@ function handleSocketMessage(event) {
     setBadge(activeJobs.size > 0 ? String(activeJobs.size) : "");
     cleanupNotificationTargets();
   } else if (payload.event === "progress") {
+    console.log("[Ferry Background] Progress WS Event:", payload.job_id, payload.percent);
     var percent = (payload.percent !== undefined && payload.percent !== null) ? payload.percent : 0;
     
     // Always persist the first seen progress event for a job so the popup can
@@ -519,6 +530,7 @@ if (globalThis.chrome && globalThis.chrome.runtime && globalThis.chrome.runtime.
     if (message.type === "TRACK_JOB") {
       if (message.jobId) {
         activeJobs.add(message.jobId);
+        var sourceUrl = message.meta && message.meta.sourceUrl ? message.meta.sourceUrl : "";
         queueActivityUpdate(message.jobId, {
           title: message.meta && message.meta.sourceTitle ? message.meta.sourceTitle : (message.title || "Video"),
           state: "queued",
@@ -526,8 +538,9 @@ if (globalThis.chrome && globalThis.chrome.runtime && globalThis.chrome.runtime.
           qualityLabel: message.meta && message.meta.qualityLabel ? message.meta.qualityLabel : "",
           formatLabel: message.meta && message.meta.formatLabel ? message.meta.formatLabel : "",
           thumbnailUrl: message.meta && message.meta.sourceThumbnailUrl ? message.meta.sourceThumbnailUrl : "",
-          sourceUrl: message.meta && message.meta.sourceUrl ? message.meta.sourceUrl : "",
-          videoId: message.meta && message.meta.sourceVideoId ? message.meta.sourceVideoId : ""
+          sourceUrl: sourceUrl,
+          videoId: message.meta && message.meta.sourceVideoId ? message.meta.sourceVideoId : "",
+          sourceKind: message.meta && message.meta.sourceKind ? message.meta.sourceKind : getSourceKindFromUrl(sourceUrl)
         }).then(function() {
           shouldKeepSocket = true;
           setBadge(String(activeJobs.size));

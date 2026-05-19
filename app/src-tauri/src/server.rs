@@ -58,9 +58,9 @@ pub async fn run(
         .route("/download", post(download))
         .route("/reveal", post(reveal))
         .route("/open", post(open_file))
-        .route("/status/{job_id}", get(status))
-        .route("/jobs/{job_id}/cancel", post(cancel_job))
-        .route("/jobs/{job_id}/skip", post(skip_job))
+        .route("/status/:job_id", get(status))
+        .route("/jobs/:job_id/cancel", post(cancel_job))
+        .route("/jobs/:job_id/skip", post(skip_job))
         .route("/action/open-settings", any(open_settings_handler))
         .route("/action/open-downloads", any(open_downloads_handler))
         .route("/ws", any(ws_handler))
@@ -171,9 +171,12 @@ async fn cancel_job(
     State(state): State<ApiState>,
     Path(job_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    info!(job_id = %job_id, "cancel request received");
     if state.queue.cancel_job(&job_id).await {
+        info!(job_id = %job_id, "cancel accepted");
         Ok(Json(serde_json::json!({ "ok": true })))
     } else {
+        warn!(job_id = %job_id, "cancel rejected: job not found or not cancellable");
         Err(AppError::NotFound(
             "job not found or not cancellable".to_string(),
         ))
@@ -235,7 +238,9 @@ async fn reveal(Json(payload): Json<RevealRequest>) -> Result<Json<serde_json::V
     }
 }
 
-async fn open_file(Json(payload): Json<RevealRequest>) -> Result<Json<serde_json::Value>, AppError> {
+async fn open_file(
+    Json(payload): Json<RevealRequest>,
+) -> Result<Json<serde_json::Value>, AppError> {
     let input = payload.path.trim();
     if input.is_empty() {
         return Err(AppError::BadRequest("path is required".to_string()));
@@ -250,7 +255,12 @@ async fn open_file(Json(payload): Json<RevealRequest>) -> Result<Json<serde_json
     }
 
     let result = if cfg!(target_os = "windows") {
-        StdCommand::new("cmd").arg("/C").arg("start").arg("").arg(&target).status()
+        StdCommand::new("cmd")
+            .arg("/C")
+            .arg("start")
+            .arg("")
+            .arg(&target)
+            .status()
     } else if cfg!(target_os = "macos") {
         StdCommand::new("open").arg(&target).status()
     } else {
@@ -259,9 +269,7 @@ async fn open_file(Json(payload): Json<RevealRequest>) -> Result<Json<serde_json
 
     match result {
         Ok(exit) if exit.success() => Ok(Json(serde_json::json!({ "ok": true }))),
-        Ok(exit) => Err(AppError::BadGateway(format!(
-            "open command failed: {exit}"
-        ))),
+        Ok(exit) => Err(AppError::BadGateway(format!("open command failed: {exit}"))),
         Err(error) => Err(AppError::BadGateway(format!(
             "failed to start open command: {error}"
         ))),

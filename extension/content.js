@@ -73,12 +73,23 @@ let historyHooksInstalled = false;
 function isWatchPage() {
   try {
     const url = new URL(window.location.href);
-    return url.hostname.includes("youtube.com") && url.pathname === "/watch";
+    return url.hostname.includes("youtube.com") && (url.pathname === "/watch" || url.pathname.startsWith("/shorts/"));
+  } catch { return false; }
+}
+
+function isShortsPage() {
+  try {
+    const url = new URL(window.location.href);
+    return url.hostname.includes("youtube.com") && url.pathname.startsWith("/shorts/");
   } catch { return false; }
 }
 
 function getVideoContext() {
-  const videoId = new URLSearchParams(window.location.search).get("v");
+  const url = new URL(window.location.href);
+  let videoId = new URLSearchParams(url.search).get("v");
+  if (!videoId && url.pathname.startsWith("/shorts/")) {
+    videoId = url.pathname.split("/shorts/")[1].split("/")[0].split("?")[0];
+  }
   let pageThumbnail = null;
   if (videoId) {
     pageThumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
@@ -91,7 +102,7 @@ function getVideoContext() {
   return {
     url: window.location.href,
     videoId: videoId,
-    title: document.querySelector("h1.ytd-watch-metadata")?.textContent?.trim() || document.title,
+    title: document.querySelector("h1.ytd-watch-metadata")?.textContent?.trim() || document.querySelector("ytd-reel-video-renderer[is-active] h2.title")?.textContent?.trim() || document.title,
     thumbnailUrl: pageThumbnail,
   };
 }
@@ -110,6 +121,12 @@ function isElementVisible(node) {
   }
   const rect = node.getBoundingClientRect();
   return rect.width > 0 && rect.height > 0;
+}
+
+function getVisibleElements(selectors, root = document) {
+  return selectors
+    .flatMap((selector) => Array.from(root.querySelectorAll(selector)))
+    .filter((node) => node?.isConnected && isElementVisible(node));
 }
 
 function getPlayerDurationSeconds() {
@@ -154,6 +171,7 @@ function setStatus(panel, text, ok = true, show = true) {
 }
 
 function setProgress(panel, progress, speed, eta) {
+  console.log("[Ferry Content] setProgress called:", progress, speed, eta);
   const box = panel.querySelector("#ferry-progress-box");
   const text = panel.querySelector("#ferry-progress-text");
   const dlBtn = panel.querySelector('[data-ferry="download-btn"]');
@@ -171,10 +189,8 @@ function setProgress(panel, progress, speed, eta) {
       dlBtn.disabled = false;
     }
   } else {
-    box.style.display = "flex";
-    text.textContent = `${value}%`;
-    text.style.color = "";
-    if (dlBtn) dlBtn.disabled = true;
+    box.style.display = "none";
+    if (dlBtn) dlBtn.disabled = false;
   }
 }
 
@@ -796,6 +812,9 @@ async function handleDownloadClick(panel) {
         qualityLabel: presentation.title || "Best",
         formatLabel: payload.format.toUpperCase(),
         sourceThumbnailUrl: context.thumbnailUrl || "",
+        sourceUrl: context.url || payload.url || "",
+        sourceVideoId: context.videoId || "",
+        sourceKind: isShortsPage() ? "short" : "long",
       }
     });
   } catch (error) {
@@ -826,21 +845,26 @@ function stopStatusPolling() {
 
 function ensureWsListener() {
   if (wsBound) return;
-  chrome.runtime.onMessage.addListener((m) => {
-    const p = document.getElementById(PANEL_ID);
-    if (m.type === "PREFETCH_UPDATED" && m.payload.key === prefetchKey) {
-      const snapshot = m.payload;
-      prefetchState.loading = snapshot.state === "loading";
-      prefetchState.formats = Array.isArray(snapshot.formats) ? snapshot.formats : [];
-      prefetchState.error = snapshot.state === "error" ? (snapshot.error || "Failed to load formats") : null;
-      if (p && p.style.display !== "none") applyPrefetchStateToPanel(p);
-    } else if (m.type === "WS_EVENT" && p && m.payload.job_id === activeJobId) {
-      if (m.payload.event === "progress") setProgress(p, m.payload.percent, m.payload.speed, m.payload.eta);
-      else if (m.payload.event === "done") setProgress(p, 100);
-      else if (m.payload.event === "error") setStatus(p, m.payload.message, false, true);
-    }
-  });
-  wsBound = true;
+  if (!globalThis.chrome?.runtime?.onMessage) return;
+  try {
+    chrome.runtime.onMessage.addListener((m) => {
+      const p = document.getElementById(PANEL_ID);
+      if (m.type === "PREFETCH_UPDATED" && m.payload.key === prefetchKey) {
+        const snapshot = m.payload;
+        prefetchState.loading = snapshot.state === "loading";
+        prefetchState.formats = Array.isArray(snapshot.formats) ? snapshot.formats : [];
+        prefetchState.error = snapshot.state === "error" ? (snapshot.error || "Failed to load formats") : null;
+        if (p && p.style.display !== "none") applyPrefetchStateToPanel(p);
+      } else if (m.type === "WS_EVENT" && p && m.payload.job_id === activeJobId) {
+        if (m.payload.event === "progress") setProgress(p, m.payload.percent, m.payload.speed, m.payload.eta);
+        else if (m.payload.event === "done") setProgress(p, 100);
+        else if (m.payload.event === "error") setStatus(p, m.payload.message, false, true);
+      }
+    });
+    wsBound = true;
+  } catch (e) {
+    console.warn("[Ferry Content] Failed to bind message listener:", e);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -848,7 +872,16 @@ function ensureWsListener() {
 // ---------------------------------------------------------------------------
 
 function ensureDropdownHostStyles(actionBar) {
-  const nodes = [actionBar, actionBar?.parentElement, actionBar?.closest("#menu"), actionBar?.closest("#actions"), actionBar?.closest("#actions-inner"), actionBar?.closest("ytd-watch-metadata")].filter(Boolean);
+  const nodes = [
+    actionBar,
+    actionBar?.parentElement,
+    actionBar?.closest("#menu"),
+    actionBar?.closest("#actions"),
+    actionBar?.closest("#actions-inner"),
+    actionBar?.closest("ytd-watch-metadata"),
+    actionBar?.closest("ytd-reel-video-renderer"),
+    actionBar?.closest("ytd-shorts"),
+  ].filter(Boolean);
   for (const node of nodes) { if (node instanceof HTMLElement) node.style.overflow = "visible"; }
 }
 
@@ -859,7 +892,103 @@ function setButtonActiveState(active) {
   button.setAttribute("aria-pressed", active ? "true" : "false");
 }
 
+function findActiveShortsRenderer() {
+  const selectors = [
+    "ytd-reel-video-renderer[is-active]",
+    "ytd-reel-video-renderer[active]",
+    "ytd-reel-video-renderer",
+  ];
+  const visibleRenderers = getVisibleElements(selectors);
+  if (!visibleRenderers.length) return null;
+
+  const viewportCenter = window.innerHeight / 2;
+  return visibleRenderers
+    .map((node) => {
+      const rect = node.getBoundingClientRect();
+      const center = rect.top + rect.height / 2;
+      return { node, distance: Math.abs(center - viewportCenter) };
+    })
+    .sort((left, right) => left.distance - right.distance)[0]?.node || null;
+}
+
+function findShortsActionBar() {
+  const renderer = findActiveShortsRenderer();
+  if (!renderer) return null;
+
+  const selectors = [
+    ".ytReelPlayerOverlayViewModelActionsContainer",
+    ".reel-player-overlay-actions",
+    "ytd-reel-player-overlay-renderer #actions",
+    "ytd-reel-player-overlay-renderer [id='actions']",
+  ];
+  const container = getVisibleElements(selectors, renderer)[0];
+  if (!container) return null;
+
+  const directChildren = Array.from(container.children).filter((child) => {
+    if (!isElementVisible(child) || child.id === WRAPPER_ID) return false;
+    const rect = child.getBoundingClientRect();
+    return rect.width >= 40 && rect.height >= 120;
+  });
+
+  const verticalChild = directChildren
+    .map((child) => {
+      const rect = child.getBoundingClientRect();
+      const style = window.getComputedStyle(child);
+      const score =
+        (style.display.includes("flex") ? 40 : 0) +
+        (style.flexDirection.includes("column") ? 80 : 0) +
+        (rect.height > rect.width * 2 ? 60 : 0) +
+        rect.left / 1000;
+      return { child, score };
+    })
+    .sort((left, right) => right.score - left.score)[0]?.child;
+
+  return verticalChild || container;
+}
+
+function getFlexOrder(node) {
+  const value = Number.parseInt(window.getComputedStyle(node).order || "0", 10);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function getActionRailChildText(node) {
+  return [
+    node.getAttribute("aria-label"),
+    node.getAttribute("title"),
+    node.textContent,
+    ...Array.from(node.querySelectorAll("[aria-label], [title]")).map((child) => `${child.getAttribute("aria-label") || ""} ${child.getAttribute("title") || ""}`),
+  ].join(" ").toLowerCase();
+}
+
+function findShortsLikeRailChild(actionBar) {
+  if (!actionBar) return null;
+  return Array.from(actionBar.children).find((child) => {
+    if (child.id === WRAPPER_ID || !isElementVisible(child)) return false;
+    const text = getActionRailChildText(child);
+    return text.includes("like") && !text.includes("dislike");
+  }) || null;
+}
+
+function placeShortsButtonInRail(wrapper, actionBar) {
+  if (!wrapper || !actionBar) return false;
+  const flexDirection = window.getComputedStyle(actionBar).flexDirection || "column";
+  const isReverse = flexDirection.includes("reverse");
+  const likeChild = findShortsLikeRailChild(actionBar);
+
+  wrapper.style.left = "";
+  wrapper.style.top = "";
+  wrapper.style.order = likeChild
+    ? String(getFlexOrder(likeChild) + (isReverse ? 1 : -1))
+    : "";
+  return true;
+}
+
 function findActionBar() {
+  if (isShortsPage()) {
+    return findShortsActionBar();
+  }
+
+  // Regular Watch Page selectors
   const selectors = [
     "#top-level-buttons-computed",
     "#menu #top-level-buttons-computed",
@@ -909,6 +1038,11 @@ function shouldReattachButton(bar) {
   const button = document.getElementById(BUTTON_ID);
   if (!wrapper || !button) return true;
   if (!wrapper.isConnected || !button.isConnected) return true;
+  if (isShortsPage()) {
+    if (wrapper.parentElement !== bar) return true;
+    placeShortsButtonInRail(wrapper, bar);
+    return !isElementVisible(button);
+  }
   if (wrapper.parentElement !== bar) return true;
   if (!isElementVisible(bar) || !isElementVisible(wrapper) || !isElementVisible(button)) return true;
   return false;
@@ -923,8 +1057,9 @@ function shouldInjectButton() {
 }
 
 function createButton() {
+  const isShorts = isShortsPage();
   const button = document.createElement("button");
-  button.id = BUTTON_ID; button.className = "ferry-injected-button";
+  button.id = BUTTON_ID; button.className = "ferry-injected-button" + (isShorts ? " is-shorts" : "");
   button.innerHTML = `
     <span class="ferry-button-icon" aria-hidden="true">
       <span class="ferry-icon-fill">
@@ -939,7 +1074,7 @@ function createButton() {
         </g>
       </svg>
     </span>
-    <span class="ferry-button-text">Ferry</span>
+    ${!isShorts ? '<span class="ferry-button-text">Ferry</span>' : ''}
   `;
   button.onclick = async () => {
     const actionBar = findActionBar();
@@ -950,6 +1085,7 @@ function createButton() {
     panel.style.display = opening ? "flex" : "none";
     setButtonActiveState(opening);
     if (opening) {
+      safeSendMessage({ type: "ENSURE_WS" }).catch(() => {});
       setPanelMode(panel, panel.dataset.ferryMode || "video");
       prefetchKey = window.location.href;
       prefetchState.loading = true;
@@ -971,6 +1107,7 @@ function inject() {
   if (!isWatchPage()) return false;
   const bar = findActionBar();
   if (!bar) return false;
+  const isShorts = isShortsPage();
 
   const context = getVideoContext();
   const currentVideoId = context.videoId || window.location.href;
@@ -982,10 +1119,25 @@ function inject() {
     teardownInjectedUi();
   }
 
-  if (document.getElementById(BUTTON_ID) && document.getElementById(WRAPPER_ID)?.parentElement === bar) return true;
+  const existingWrapper = document.getElementById(WRAPPER_ID);
+  if (isShorts && document.getElementById(BUTTON_ID) && existingWrapper) {
+    placeShortsButtonInRail(existingWrapper, bar);
+    return true;
+  }
+  if (document.getElementById(BUTTON_ID) && existingWrapper?.parentElement === bar) return true;
   ensureDropdownHostStyles(bar);
-  const wrap = document.createElement("div"); wrap.id = WRAPPER_ID; wrap.className = "ferry-button-anchor";
-  bar.prepend(wrap); wrap.appendChild(createButton());
+  const wrap = document.createElement("div");
+  wrap.id = WRAPPER_ID;
+  wrap.className = "ferry-button-anchor" + (isShorts ? " is-shorts" : "");
+
+  if (isShorts) {
+    bar.prepend(wrap);
+    placeShortsButtonInRail(wrap, bar);
+  } else {
+    bar.prepend(wrap);
+  }
+
+  wrap.appendChild(createButton());
   lastInjectedVideoId = currentVideoId;
   return true;
 }
@@ -1028,7 +1180,8 @@ function scheduleInject() {
   if (injectTimer) clearTimeout(injectTimer);
   injectTimer = setTimeout(() => {
     injectTimer = null;
-    if (!shouldInjectButton() && lastInjectedVideoId === getWatchPageKey()) return;
+    const hasHealthyButton = !shouldInjectButton() && lastInjectedVideoId === getWatchPageKey();
+    if (hasHealthyButton) return;
     if (injectionLoopActive) return;
     injectionLoopActive = true;
     injectionWatchdogTicks = 0;
@@ -1057,9 +1210,7 @@ function handlePageStateChange() {
     teardownInjectedUi();
   }
 
-  if (shouldInjectButton()) {
-    scheduleInject();
-  }
+  scheduleInject();
 }
 
 function installHistoryHooks() {

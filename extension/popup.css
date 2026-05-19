@@ -312,10 +312,59 @@ textarea {
   border: 0.5px solid var(--border);
 }
 
+.transfer-badge-source {
+  color: var(--accent3);
+  background: rgba(61, 143, 242, 0.12);
+  border: 0.5px solid rgba(61, 143, 242, 0.24);
+}
+
 .transfer-badge-status {
   color: var(--text);
   background: rgba(255, 255, 255, 0.1);
   border: 0.5px solid rgba(255, 255, 255, 0.2);
+}
+
+.transfer-badge-queued {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.06);
+  border: 0.5px solid rgba(255, 255, 255, 0.12);
+  font-style: italic;
+}
+
+.transfer-badge-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--accent, #B5F23D);
+  background: rgba(181, 242, 61, 0.10);
+  border: 0.5px solid rgba(181, 242, 61, 0.25);
+}
+
+.transfer-badge-done {
+  color: var(--accent, #B5F23D);
+  background: rgba(181, 242, 61, 0.12);
+  border: 0.5px solid rgba(181, 242, 61, 0.3);
+  font-weight: 600;
+}
+
+.transfer-badge-error {
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.10);
+  border: 0.5px solid rgba(255, 107, 107, 0.25);
+}
+
+.ferry-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid rgba(181, 242, 61, 0.25);
+  border-top-color: var(--accent, #B5F23D);
+  border-radius: 50%;
+  animation: ferry-spin 0.7s linear infinite;
+}
+
+@keyframes ferry-spin {
+  to { transform: rotate(360deg); }
 }
 
 .transfer-title {
@@ -328,6 +377,13 @@ textarea {
   -webkit-box-orient: vertical;
   overflow: hidden;
   margin-bottom: 4px;
+}
+
+.transfer-pct {
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  font-family: var(--mono, 'DM Mono', monospace);
 }
 
 .transfer-meta {
@@ -405,6 +461,7 @@ textarea {
 .transfer-action-btn svg {
   width: 14px;
   height: 14px;
+  pointer-events: none;
 }
 
 .activity {

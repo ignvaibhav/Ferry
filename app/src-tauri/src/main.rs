@@ -14,7 +14,7 @@ mod queue;
 mod server;
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use tauri::menu::{AboutMetadataBuilder, Menu, MenuBuilder, MenuItem, SubmenuBuilder};
@@ -51,6 +51,13 @@ struct DownloadSettingsResponse {
     default_download_dir: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct ReleaseDownloadResponse {
+    version: String,
+    downloaded_path: String,
+    extracted_app_path: Option<String>,
+}
+
 // ---------------------------------------------------------------------------
 // Settings file I/O
 // ---------------------------------------------------------------------------
@@ -75,6 +82,53 @@ fn save_settings(app: &AppHandle, settings: &AppSettings) -> anyhow::Result<()> 
     let path = settings_path(app)?;
     let data = serde_json::to_string_pretty(settings)?;
     fs::write(path, data)?;
+    Ok(())
+}
+
+fn sanitize_version_tag(version: &str) -> String {
+    let cleaned = version.trim().trim_start_matches('v');
+    let sanitized: String = cleaned
+        .chars()
+        .map(|ch| match ch {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '.' | '-' | '_' => ch,
+            _ => '-',
+        })
+        .collect();
+
+    if sanitized.is_empty() {
+        "latest".to_string()
+    } else {
+        sanitized
+    }
+}
+
+fn updates_download_dir() -> PathBuf {
+    config::default_download_dir().join("Island Updates")
+}
+
+fn reveal_path(target: &Path) -> anyhow::Result<()> {
+    if cfg!(target_os = "windows") {
+        let selector = format!("/select,{}", target.display());
+        std::process::Command::new("explorer")
+            .arg(selector)
+            .status()?;
+        return Ok(());
+    }
+
+    if cfg!(target_os = "macos") {
+        std::process::Command::new("open")
+            .arg("-R")
+            .arg(target)
+            .status()?;
+        return Ok(());
+    }
+
+    let dir = if target.is_file() {
+        target.parent().unwrap_or(target)
+    } else {
+        target
+    };
+    std::process::Command::new("xdg-open").arg(dir).status()?;
     Ok(())
 }
 
@@ -217,6 +271,94 @@ fn open_external_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+async fn download_release_asset(
+    version: String,
+    asset_name: String,
+    asset_url: String,
+) -> Result<ReleaseDownloadResponse, String> {
+    let version = sanitize_version_tag(&version);
+    let asset_name = asset_name.trim().to_string();
+    let asset_url = asset_url.trim().to_string();
+
+    if asset_name.is_empty() {
+        return Err("Missing release asset name".to_string());
+    }
+
+    if !asset_url.starts_with("https://github.com/") {
+        return Err("Unsupported release asset URL".to_string());
+    }
+
+    let destination_dir = updates_download_dir().join(format!("v{version}"));
+    fs::create_dir_all(&destination_dir)
+        .map_err(|e| format!("Failed to create update folder: {e}"))?;
+
+    let archive_path = destination_dir.join(&asset_name);
+    let download_status = if cfg!(target_os = "windows") {
+        std::process::Command::new("curl")
+            .arg("-L")
+            .arg(&asset_url)
+            .arg("-o")
+            .arg(&archive_path)
+            .status()
+            .map_err(|e| format!("Failed to start update download: {e}"))?
+    } else {
+        std::process::Command::new("curl")
+            .arg("-L")
+            .arg(&asset_url)
+            .arg("-o")
+            .arg(&archive_path)
+            .status()
+            .map_err(|e| format!("Failed to start update download: {e}"))?
+    };
+
+    if !download_status.success() {
+        return Err("Release download failed".to_string());
+    }
+
+    let mut extracted_app_path = None;
+
+    if cfg!(target_os = "macos") && asset_name.ends_with(".zip") {
+        let extracted_dir = destination_dir.join("macOS");
+        if extracted_dir.exists() {
+            fs::remove_dir_all(&extracted_dir)
+                .map_err(|e| format!("Failed to refresh extracted update folder: {e}"))?;
+        }
+        fs::create_dir_all(&extracted_dir)
+            .map_err(|e| format!("Failed to prepare extracted update folder: {e}"))?;
+
+        let unzip_status = std::process::Command::new("ditto")
+            .arg("-x")
+            .arg("-k")
+            .arg(&archive_path)
+            .arg(&extracted_dir)
+            .status()
+            .map_err(|e| format!("Failed to unpack update: {e}"))?;
+
+        if !unzip_status.success() {
+            return Err("Update archive could not be unpacked".to_string());
+        }
+
+        let app_path = extracted_dir.join("Island.app");
+        if app_path.exists() {
+            reveal_path(&app_path)
+                .map_err(|e| format!("Failed to reveal update in Finder: {e}"))?;
+            extracted_app_path = Some(app_path.display().to_string());
+        } else {
+            reveal_path(&archive_path)
+                .map_err(|e| format!("Failed to reveal downloaded archive: {e}"))?;
+        }
+    } else {
+        reveal_path(&archive_path).map_err(|e| format!("Failed to reveal update download: {e}"))?;
+    }
+
+    Ok(ReleaseDownloadResponse {
+        version,
+        downloaded_path: archive_path.display().to_string(),
+        extracted_app_path,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Utility
 // ---------------------------------------------------------------------------
@@ -293,7 +435,8 @@ fn main() {
             set_download_directory,
             reset_download_directory,
             browse_download_directory,
-            open_external_url
+            open_external_url,
+            download_release_asset
         ])
         .plugin({
             // MacosLauncher::LaunchAgent is a macOS-only concept; on other platforms
@@ -308,7 +451,10 @@ fn main() {
             }
             #[cfg(not(target_os = "macos"))]
             {
-                tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None)
+                tauri_plugin_autostart::init(
+                    tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                    None,
+                )
             }
         });
 
@@ -351,9 +497,7 @@ fn main() {
                     .select_all()
                     .build()?;
 
-                let view_menu = SubmenuBuilder::new(app, "View")
-                    .fullscreen()
-                    .build()?;
+                let view_menu = SubmenuBuilder::new(app, "View").fullscreen().build()?;
 
                 let window_menu = SubmenuBuilder::new(app, "Window")
                     .minimize()
@@ -419,13 +563,8 @@ fn main() {
             }
 
             // Build system tray
-            let settings_item = MenuItem::with_id(
-                app,
-                MENU_SETTINGS_ID,
-                "Settings",
-                true,
-                None::<&str>,
-            )?;
+            let settings_item =
+                MenuItem::with_id(app, MENU_SETTINGS_ID, "Settings", true, None::<&str>)?;
             let open_downloads = MenuItem::with_id(
                 app,
                 MENU_OPEN_DOWNLOADS_ID,
@@ -436,9 +575,7 @@ fn main() {
             let quit = MenuItem::with_id(app, MENU_QUIT_ID, "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&settings_item, &open_downloads, &quit])?;
 
-            let _ = TrayIconBuilder::with_id("island")
-                .menu(&menu)
-                .build(app)?;
+            let _ = TrayIconBuilder::with_id("island").menu(&menu).build(app)?;
 
             Ok(())
         })

@@ -96,7 +96,8 @@ pub async fn fetch_formats(url: &str) -> Result<Vec<FormatOption>> {
     let data: Value =
         serde_json::from_slice(&output.stdout).context("invalid yt-dlp json output")?;
     let duration = data.get("duration").and_then(Value::as_f64).unwrap_or(0.0);
-    let (videos_by_height, audio_candidates, thumbnail_candidates) = parse_format_data(&data, duration);
+    let (videos_by_height, audio_candidates, thumbnail_candidates) =
+        parse_format_data(&data, duration);
 
     let result = build_format_options(
         url,
