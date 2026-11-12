@@ -67,7 +67,6 @@ jobs:
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            ffmpeg \
             libssl-dev \
             "${WEBKIT_PKG}"
 
@@ -81,19 +80,9 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version '^2'
 
-      - name: Verify bundled macOS sidecars
+      - name: Hydrate macOS sidecars
         if: matrix.key == 'macos'
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          for binary in yt-dlp-mac ffmpeg-mac ffprobe-mac; do
-            path="app/src-tauri/resources/${binary}"
-            if [[ ! -s "${path}" ]]; then
-              echo "Missing required macOS sidecar: ${path}" >&2
-              exit 1
-            fi
-          done
+        run: ./scripts/hydrate-sidecars-macos.sh
 
       - name: Hydrate Linux sidecars
         if: matrix.key == 'linux'

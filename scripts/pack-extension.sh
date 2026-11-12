@@ -3,7 +3,7 @@
 # Usage: ./scripts/pack-extension.sh [output-dir]
 #
 # Output: dist/ferry-extension.zip
-# The zip contains all extension files ready to be loaded unpacked in Chrome/Brave/Edge.
+# The same zip works for Chromium browsers and Firefox (one cross-browser manifest).
 
 set -euo pipefail
 
@@ -43,7 +43,8 @@ SIZE=$(du -sh "${OUT_ZIP}" | cut -f1)
 echo "Done — ferry-extension.zip (${SIZE})"
 echo ""
 echo "Install instructions:"
-echo "  1. Download and unzip ferry-extension.zip"
-echo "  2. Open Chrome/Brave/Edge and go to chrome://extensions"
-echo "  3. Enable Developer Mode (top-right toggle)"
-echo "  4. Click 'Load unpacked' and select the unzipped folder"
+echo "  Chromium (Chrome/Edge/Brave/Opera/Vivaldi/Arc):"
+echo "    unzip, open chrome://extensions, enable Developer Mode, 'Load unpacked'"
+echo "  Firefox 128+:"
+echo "    sign the zip on addons.mozilla.org (free, can be unlisted) and install the .xpi;"
+echo "    for testing: about:debugging > This Firefox > Load Temporary Add-on > manifest.json"

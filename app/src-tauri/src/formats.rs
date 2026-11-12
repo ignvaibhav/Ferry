@@ -11,7 +11,6 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use serde_json::Value;
-use tokio::process::Command;
 use tracing::info;
 
 use crate::downloader::resolve_binary;
@@ -71,11 +70,12 @@ pub async fn fetch_formats(url: &str) -> Result<Vec<FormatOption>> {
 
     let output = tokio::time::timeout(
         FORMAT_PROBE_TIMEOUT,
-        Command::new(yt_dlp)
+        crate::downloader::yt_dlp_command(&yt_dlp)
             .arg("--dump-json")
             .arg("--no-warnings")
             .arg("--extractor-args")
             .arg(EXTRACTOR_ARGS)
+            .arg("--")
             .arg(url)
             .output(),
     )
