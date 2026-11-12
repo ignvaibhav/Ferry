@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, OnceLock};
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
@@ -729,8 +729,86 @@ async fn terminate_process_group(pid: u32) {
     }
 }
 
-/// Resolve a binary by name from bundled sidecar resources only.
+/// Writable, self-updating copy of yt-dlp (set at startup).
+static MANAGED_YT_DLP: OnceLock<PathBuf> = OnceLock::new();
+const YT_DLP_UPDATE_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+
+/// Keep a writable yt-dlp in `dir` and self-update it daily. The bundled copy
+/// can't be updated in place (read-only app bundle / Program Files), and
+/// YouTube breaks old yt-dlp versions every few weeks.
+pub async fn run_yt_dlp_updater(dir: PathBuf) {
+    let managed = dir.join(executable_alias("yt-dlp"));
+    let _ = MANAGED_YT_DLP.set(managed.clone());
+    loop {
+        if let Err(err) = refresh_managed_yt_dlp(&managed).await {
+            warn!(error = %err, "yt-dlp update failed; using current copy");
+        }
+        tokio::time::sleep(YT_DLP_UPDATE_INTERVAL).await;
+    }
+}
+
+async fn refresh_managed_yt_dlp(managed: &Path) -> Result<()> {
+    let bundled = bundled_binary("yt-dlp")?;
+    let bundled_version = yt_dlp_version(&bundled).await?;
+    let managed_version = yt_dlp_version(managed).await.ok();
+
+    // Seed (or re-seed after an app update ships a newer, or the copy is broken).
+    if newer_version(&bundled_version, managed_version.as_deref()) {
+        let dir = managed.parent().context("managed yt-dlp has no parent dir")?;
+        fs::create_dir_all(dir)?;
+        let tmp = managed.with_extension("partial");
+        fs::copy(&bundled, &tmp)?;
+        ensure_executable(&tmp);
+        // rename so a running job never sees a half-written binary
+        fs::rename(&tmp, managed)?;
+        info!(version = %bundled_version, path = %managed.display(), "seeded managed yt-dlp");
+    }
+
+    let output = tokio::time::timeout(
+        Duration::from_secs(180),
+        yt_dlp_command(managed).arg("--update").output(),
+    )
+    .await
+    .context("yt-dlp update timed out")??;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    anyhow::ensure!(
+        output.status.success(),
+        "yt-dlp --update failed: {}{}",
+        stdout.trim(),
+        String::from_utf8_lossy(&output.stderr).trim()
+    );
+    info!(output = %stdout.trim(), "yt-dlp update check done");
+    Ok(())
+}
+
+async fn yt_dlp_version(binary: &Path) -> Result<String> {
+    let output = tokio::time::timeout(
+        Duration::from_secs(60),
+        yt_dlp_command(binary).arg("--version").output(),
+    )
+    .await
+    .context("yt-dlp --version timed out")??;
+    anyhow::ensure!(output.status.success(), "yt-dlp --version failed");
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// yt-dlp versions are dates (2026.11.01[.123456]), so they compare as strings.
+fn newer_version(candidate: &str, current: Option<&str>) -> bool {
+    current.is_none_or(|current| candidate > current)
+}
+
+/// Resolve a binary, preferring the self-updated yt-dlp over the bundled one.
 pub fn resolve_binary(name: &str) -> Result<PathBuf> {
+    if name == "yt-dlp" {
+        if let Some(managed) = MANAGED_YT_DLP.get().filter(|p| p.exists()) {
+            return Ok(managed.clone());
+        }
+    }
+    bundled_binary(name)
+}
+
+/// Resolve a binary by name from bundled sidecar resources only.
+fn bundled_binary(name: &str) -> Result<PathBuf> {
     let candidates = sidecar_candidates(name);
     for candidate in candidates {
         if candidate.exists() && !is_placeholder_sidecar(&candidate) {
@@ -1004,6 +1082,14 @@ fn next_available_path(dir: &Path, base: &str, ext: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn version_ordering() {
+        assert!(newer_version("2026.11.01", None));
+        assert!(newer_version("2026.11.01", Some("2026.10.22")));
+        assert!(!newer_version("2026.10.22", Some("2026.11.01.120000")));
+        assert!(!newer_version("2026.11.01", Some("2026.11.01")));
+    }
 
     #[test]
     fn filename_sanitizing() {

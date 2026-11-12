@@ -1,9 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Ferry",
-  "description": "Browser companion launcher for the local Ferry desktop app.",
+  "description": "Download videos from the page you're on via the local Island desktop app.",
   "version": "1.0.6",
-  "permissions": ["activeTab", "storage", "notifications", "tabs"],
+  "permissions": [
+    "activeTab",
+    "storage",
+    "notifications",
+    "tabs"
+  ],
   "host_permissions": [
     "http://127.0.0.1:49152/*",
     "http://localhost:49152/*",
@@ -11,20 +16,36 @@
   ],
   "background": {
     "service_worker": "background.js",
+    "scripts": [
+      "background.js"
+    ],
     "type": "module"
   },
   "content_scripts": [
     {
-      "matches": ["https://www.youtube.com/*"],
-      "js": ["content.js"],
-      "css": ["content.css"],
+      "matches": [
+        "https://www.youtube.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["icons/icon16.png", "icons/icon48.png", "icons/icon128.png", "icons/extentionIcon.png"],
-      "matches": ["https://www.youtube.com/*"]
+      "resources": [
+        "icons/icon16.png",
+        "icons/icon48.png",
+        "icons/icon128.png",
+        "icons/extentionIcon.png"
+      ],
+      "matches": [
+        "https://www.youtube.com/*"
+      ]
     }
   ],
   "action": {
@@ -44,5 +65,16 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "ferry@ferryisland.vercel.app",
+      "strict_min_version": "128.0",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
   }
 }

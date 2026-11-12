@@ -80,8 +80,8 @@ Island  (127.0.0.1:49152)
 
 ### Requirements
 
-- macOS, Windows, or Linux
-- Chrome, Brave, Edge, or Arc
+- macOS (Apple Silicon), Windows, or Linux
+- Chrome, Edge, Brave, Opera, Vivaldi, Arc, or Firefox 128+
 
 ---
 
@@ -91,11 +91,18 @@ Island  (127.0.0.1:49152)
 
 Download your platform's installer from [Releases](https://github.com/ignvaibhav/Ferry/releases/tag/v1.0.6), and open Island. It runs quietly in the background.
 
-> **Gatekeeper note (macOS):** Builds aren't notarized yet. If macOS blocks Island on first open, right-click → Open.
+> **Unsigned builds:** Island isn't code-signed yet, so the OS warns on first launch.
+> - **macOS:** open Island once, then **System Settings → Privacy & Security → Open Anyway**. Or run `xattr -dr com.apple.quarantine /Applications/Island.app`.
+> - **Windows:** on the SmartScreen prompt, click **More info → Run anyway**.
 
 **2. Load the Ferry extension**
 
-Download `ferry-extension.zip` from the latest release and unzip it. Go to `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select the extracted `extension` folder.
+Download `ferry-extension.zip` from the latest release.
+
+- **Chromium browsers** (Chrome, Edge, Brave, Opera, Vivaldi, Arc): unzip it, open `chrome://extensions` → enable **Developer mode** → **Load unpacked** → select the extracted folder.
+- **Firefox:** install the signed `.xpi` from the release. For testing, use `about:debugging` → **This Firefox** → **Load Temporary Add-on** → pick `manifest.json`.
+
+Island self-updates its copy of yt-dlp daily, so YouTube changes don't require a new Island release.
 
 **3. Open any supported page**
 

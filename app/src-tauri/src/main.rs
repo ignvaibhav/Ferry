@@ -445,6 +445,13 @@ fn main() {
             open_external_url,
             download_release_asset
         ])
+        // Must be the first plugin: a second launch focuses this one instead of
+        // starting a duplicate tray app that can't bind the API port.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Err(err) = open_settings_window(app) {
+                error!(error = %err, "failed to open settings for second launch");
+            }
+        }))
         .plugin({
             // MacosLauncher::LaunchAgent is a macOS-only concept; on other platforms
             // the autostart plugin accepts a plain unit type — guard it here so the
@@ -557,6 +564,9 @@ fn main() {
                     error!(error = %err, "Island API server crashed");
                 }
             });
+
+            let updater_dir = app.path().app_local_data_dir()?.join("bin");
+            tauri::async_runtime::spawn(downloader::run_yt_dlp_updater(updater_dir));
 
             // Load persisted settings into runtime config
             if let Ok(settings) = load_settings(app.handle()) {

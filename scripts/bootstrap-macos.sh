@@ -57,9 +57,8 @@ install_tauri_cli() {
 }
 
 install_latest_ytdlp_sidecar() {
-  mkdir -p "$RES_DIR"
-  curl -L "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos" -o "$RES_DIR/yt-dlp-mac"
-  chmod +x "$RES_DIR/yt-dlp-mac"
+  # yt-dlp + static (non-Homebrew) ffmpeg/ffprobe
+  "$ROOT_DIR/scripts/hydrate-sidecars-macos.sh"
 }
 
 main() {

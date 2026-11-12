@@ -80,29 +80,9 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --version '^2'
 
-      - name: Verify bundled macOS sidecars
+      - name: Hydrate macOS sidecars
         if: matrix.key == 'macos'
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          for binary in yt-dlp-mac ffmpeg-mac ffprobe-mac; do
-            path="app/src-tauri/resources/${binary}"
-            if [[ ! -s "${path}" ]]; then
-              echo "Missing required macOS sidecar: ${path}" >&2
-              exit 1
-            fi
-          done
-
-          # A Homebrew-linked ffmpeg only runs on machines with that exact brew install.
-          for binary in ffmpeg-mac ffprobe-mac; do
-            path="app/src-tauri/resources/${binary}"
-            if otool -L "${path}" | grep -qE '/(opt/homebrew|usr/local)/'; then
-              echo "::error::${path} is dynamically linked to Homebrew libs; bundle a static build" >&2
-              otool -L "${path}" >&2
-              exit 1
-            fi
-          done
+        run: ./scripts/hydrate-sidecars-macos.sh
 
       - name: Hydrate Linux sidecars
         if: matrix.key == 'linux'
