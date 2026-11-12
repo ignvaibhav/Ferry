@@ -6,7 +6,7 @@
  */
 
 import { API_BASE, WS_URL, ACTIVITY_KEY, MAX_ACTIVITY_ITEMS } from "./constants.js";
-import { loadFormats } from "./api.js";
+import { loadFormats, queueDownload } from "./api.js";
 import { runtimeAvailable } from "./runtime.js";
 
 // ---------------------------------------------------------------------------
@@ -526,6 +526,29 @@ function connectSocket() {
 if (globalThis.chrome && globalThis.chrome.runtime && globalThis.chrome.runtime.onMessage) {
   globalThis.chrome.runtime.onMessage.addListener(function(message, _sender, sendResponse) {
     if (!message) return false;
+
+    // Content scripts run with the page's origin (youtube.com); Island only
+    // accepts extension origins, so they call the API through here.
+    if (message.type === "QUEUE_DOWNLOAD") {
+      queueDownload(message.payload).then(function(data) {
+        sendResponse({ ok: true, data: data });
+      }).catch(function(error) {
+        sendResponse({ ok: false, error: error && error.message ? error.message : "Download failed" });
+      });
+      return true;
+    }
+
+    if (message.type === "JOB_STATUS") {
+      fetch(API_BASE + "/status/" + encodeURIComponent(message.jobId), { cache: "no-store" }).then(function(res) {
+        if (!res.ok) throw new Error("failed (" + res.status + ")");
+        return res.json();
+      }).then(function(data) {
+        sendResponse({ ok: true, data: data });
+      }).catch(function(error) {
+        sendResponse({ ok: false, error: error.message });
+      });
+      return true;
+    }
 
     if (message.type === "TRACK_JOB") {
       if (message.jobId) {

@@ -17,7 +17,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use tauri::menu::{AboutMetadataBuilder, Menu, MenuBuilder, MenuItem, SubmenuBuilder};
+#[cfg(target_os = "macos")]
+use tauri::menu::{AboutMetadataBuilder, MenuBuilder, SubmenuBuilder};
+use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 use tracing::{error, info};
@@ -106,30 +108,35 @@ fn updates_download_dir() -> PathBuf {
     config::default_download_dir().join("Island Updates")
 }
 
-fn reveal_path(target: &Path) -> anyhow::Result<()> {
-    if cfg!(target_os = "windows") {
-        let selector = format!("/select,{}", target.display());
+pub fn reveal_path(target: &Path) -> anyhow::Result<()> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        // raw_arg: explorer mis-parses `/select,` when Rust wraps the whole arg in quotes.
+        // explorer.exe exits 1 even on success, so the status is ignored.
         std::process::Command::new("explorer")
-            .arg(selector)
-            .status()?;
+            .raw_arg(format!("/select,\"{}\"", target.display()))
+            .spawn()?;
         return Ok(());
     }
 
-    if cfg!(target_os = "macos") {
-        std::process::Command::new("open")
-            .arg("-R")
-            .arg(target)
-            .status()?;
+    #[cfg(target_os = "macos")]
+    {
+        let status = std::process::Command::new("open").arg("-R").arg(target).status()?;
+        anyhow::ensure!(status.success(), "reveal command failed: {status}");
         return Ok(());
     }
 
-    let dir = if target.is_file() {
-        target.parent().unwrap_or(target)
-    } else {
-        target
-    };
-    std::process::Command::new("xdg-open").arg(dir).status()?;
-    Ok(())
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        let dir = if target.is_file() {
+            target.parent().unwrap_or(target)
+        } else {
+            target
+        };
+        std::process::Command::new("xdg-open").arg(dir).spawn()?;
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -458,9 +465,27 @@ fn main() {
             }
         });
 
+    // Tray + app menu events must be wired on every platform, or Quit/Settings do nothing.
+    let menu_config = app_config.clone();
+    builder = builder
+            .on_menu_event(move |app, event| {
+            handle_menu_action(app, &menu_config, event.id().as_ref());
+        })
+        .on_tray_icon_event(|app, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                if let Err(err) = open_settings_window(app) {
+                    error!(error = %err, "failed to open settings window from tray click");
+                }
+            }
+        });
+
     #[cfg(target_os = "macos")]
     {
-        let menu_config = app_config.clone();
         builder = builder
             .menu(|app| {
                 let app_menu = SubmenuBuilder::new(app, "Island")
@@ -517,22 +542,8 @@ fn main() {
                     .item(&window_menu)
                     .item(&help_menu)
                     .build()
-            })
-            .on_menu_event(move |app, event| {
-                handle_menu_action(app, &menu_config, event.id().as_ref());
-            })
-            .on_tray_icon_event(|app, event| {
-                if let TrayIconEvent::Click {
-                    button: MouseButton::Left,
-                    button_state: MouseButtonState::Up,
-                    ..
-                } = event
-                {
-                    if let Err(err) = open_settings_window(app) {
-                        error!(error = %err, "failed to open settings window from tray click");
-                    }
-                }
             });
+
     }
 
     builder
@@ -575,7 +586,11 @@ fn main() {
             let quit = MenuItem::with_id(app, MENU_QUIT_ID, "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&settings_item, &open_downloads, &quit])?;
 
-            let _ = TrayIconBuilder::with_id("island").menu(&menu).build(app)?;
+            let _ = TrayIconBuilder::with_id("island")
+                .icon(app.default_window_icon().cloned().ok_or_else(|| anyhow::anyhow!("missing app icon"))?)
+                .menu(&menu)
+                .show_menu_on_left_click(false)
+                .build(app)?;
 
             Ok(())
         })

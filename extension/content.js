@@ -7,7 +7,6 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-const API_BASE = "http://127.0.0.1:49152";
 const BUTTON_ID = "ferry-injected-button";
 const PANEL_ID = "ferry-inline-panel";
 const WRAPPER_ID = "ferry-button-anchor";
@@ -29,23 +28,21 @@ async function safeSendMessage(message) {
   try { return await runtime.sendMessage(message); } catch { return null; }
 }
 
-async function queueDownload(payload) {
-  const res = await fetch(`${API_BASE}/download`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({}));
-    throw new Error(error.error || `failed (${res.status})`);
-  }
-  return res.json();
+// API calls go through the background worker: Island rejects page origins,
+// and Chrome's Local Network Access prompt would block youtube.com → localhost.
+async function callBackground(message, fallbackError) {
+  const res = await safeSendMessage(message);
+  if (!res) throw new Error("Ferry was updated or reloaded — refresh this page");
+  if (!res.ok) throw new Error(res.error || fallbackError);
+  return res.data;
 }
 
-async function fetchJobStatus(jobId) {
-  const res = await fetch(`${API_BASE}/status/${encodeURIComponent(jobId)}`);
-  if (!res.ok) throw new Error(`failed (${res.status})`);
-  return res.json();
+function queueDownload(payload) {
+  return callBackground({ type: "QUEUE_DOWNLOAD", payload }, "Download failed");
+}
+
+function fetchJobStatus(jobId) {
+  return callBackground({ type: "JOB_STATUS", jobId }, "Status check failed");
 }
 
 // ---------------------------------------------------------------------------

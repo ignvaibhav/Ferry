@@ -23,9 +23,6 @@ use tracing::{info, warn};
 use crate::config::AppConfig;
 use crate::models::DownloadRequest;
 
-/// Maximum time allowed for a single download subprocess.
-const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(30 * 60); // 30 minutes
-
 /// YouTube extractor arguments for broader client coverage.
 const EXTRACTOR_ARGS: &str = "youtube:player_client=android_vr,web_safari,android,web";
 
@@ -94,28 +91,39 @@ pub async fn run_download(
         request,
         &output_template,
     );
-    let result = tokio::time::timeout(
-        DOWNLOAD_TIMEOUT,
-        execute_download(job_id, &mut cmd, &tx, cancel_flag.clone()),
-    )
-    .await;
+    // No overall deadline: long 4K downloads are legit; stalls are caught by
+    // --socket-timeout and the user can cancel.
+    execute_download(job_id, &mut cmd, &tx, cancel_flag, Path::new(&output_template)).await
+}
 
-    match result {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(err)) => Err(err),
-        Err(_timeout) => {
-            let message = humanize_download_error(&format!(
-                "download timed out after {} minutes",
-                DOWNLOAD_TIMEOUT.as_secs() / 60
-            ));
-            let _ = tx
-                .send(DownloadEvent::Error {
-                    message: message.clone(),
-                })
-                .await;
-            Err(anyhow!(message))
-        }
+/// Base yt-dlp command shared by format probing and downloading.
+pub fn yt_dlp_command(binary: &Path) -> Command {
+    let mut cmd = Command::new(binary);
+    // UTF-8 output so non-ASCII paths (e.g. C:\Users\José) parse on Windows.
+    cmd.env("PYTHONUNBUFFERED", "1")
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8")
+        .arg("--no-playlist")
+        .arg("--socket-timeout")
+        .arg("30")
+        .stdin(Stdio::null())
+        .kill_on_drop(true);
+    hide_console(&mut cmd);
+    // Own process group so cancel can kill yt-dlp's ffmpeg children too.
+    #[cfg(unix)]
+    cmd.process_group(0);
+    cmd
+}
+
+/// Stop Windows from flashing a console window for every subprocess.
+pub fn hide_console(cmd: &mut Command) {
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
     }
+    #[cfg(not(windows))]
+    let _ = cmd;
 }
 
 /// Run a single yt-dlp subprocess, parsing stdout/stderr.
@@ -124,6 +132,7 @@ async fn execute_download(
     cmd: &mut Command,
     tx: &mpsc::Sender<DownloadEvent>,
     cancel_flag: Arc<AtomicBool>,
+    expected_path: &Path,
 ) -> Result<()> {
     let mut child = cmd.spawn().context("failed to spawn yt-dlp")?;
     let child_pid = child.id();
@@ -219,11 +228,6 @@ async fn execute_download(
                     final_path = Some(entry.to_string());
                 }
                 continue;
-            }
-
-            // Bare line (not bracket-prefixed) = final filepath
-            if !trimmed.starts_with('[') {
-                final_path = Some(trimmed.to_string());
             }
         }
 
@@ -408,8 +412,12 @@ async fn execute_download(
         })
         .await;
 
-    let done_path =
-        final_path.unwrap_or_else(|| crate::config::default_download_dir().display().to_string());
+    // The output path is fixed by our -o template; parsed log lines are only a fallback.
+    let done_path = if expected_path.exists() {
+        expected_path.display().to_string()
+    } else {
+        final_path.unwrap_or_else(|| crate::config::default_download_dir().display().to_string())
+    };
     let _ = tx.send(DownloadEvent::Done { path: done_path }).await;
     Ok(())
 }
@@ -421,9 +429,8 @@ fn build_download_command(
     request: &DownloadRequest,
     output_template: &str,
 ) -> Command {
-    let mut cmd = Command::new(binary);
-    cmd.env("PYTHONUNBUFFERED", "1")
-        .arg("--newline")
+    let mut cmd = yt_dlp_command(binary);
+    cmd.arg("--newline")
         .arg("--progress")
         .arg("--no-warnings")
         .arg("--no-overwrites")
@@ -466,11 +473,11 @@ fn build_download_command(
     }
 
     let source_url = request_source_url(request);
-    cmd.arg(&source_url)
-        .stdin(Stdio::null())
+    // `--` so a URL can never be parsed as a yt-dlp option (e.g. --exec).
+    cmd.arg("--")
+        .arg(&source_url)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
+        .stderr(Stdio::piped());
     cmd
 }
 
@@ -528,7 +535,8 @@ fn apply_format_flags(request: &DownloadRequest, cmd: &mut Command) {
 
     if height.is_empty() {
         info!(shown = %request.quality, "using broad fallback selector");
-        cmd.arg("-f").arg("bestvideo*+bestaudio/best");
+        cmd.arg("-f")
+            .arg("bestvideo*[vcodec^=avc1]+bestaudio[acodec^=mp4a]/bestvideo*+bestaudio/best");
         apply_mp4_output_flags(cmd);
         return;
     }
@@ -538,8 +546,12 @@ fn apply_format_flags(request: &DownloadRequest, cmd: &mut Command) {
         chosen_height = %height,
         "using height ceiling selector"
     );
+    // Prefer H.264 + AAC: VP9/AV1/Opus in .mp4 won't play in QuickTime or the
+    // default Windows player. 1440p+ has no H.264 on YouTube, so fall back.
     cmd.arg("-f").arg(format!(
-        "bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
+        "bestvideo[height<={height}][vcodec^=avc1]+bestaudio[acodec^=mp4a]/\
+         bestvideo[height<={height}]+bestaudio[acodec^=mp4a]/\
+         bestvideo[height<={height}]+bestaudio/best[height<={height}]/best"
     ));
     apply_mp4_output_flags(cmd);
 }
@@ -678,15 +690,15 @@ fn humanize_download_error(message: &str) -> String {
 async fn terminate_process_group(pid: u32) {
     #[cfg(target_os = "windows")]
     {
-        if let Ok(mut child) = Command::new("taskkill")
-            .arg("/PID")
+        let mut kill = Command::new("taskkill");
+        kill.arg("/PID")
             .arg(pid.to_string())
             .arg("/T")
             .arg("/F")
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-        {
+            .stderr(Stdio::null());
+        hide_console(&mut kill);
+        if let Ok(mut child) = kill.spawn() {
             let _ = child.wait().await;
         }
     }
@@ -722,11 +734,31 @@ pub fn resolve_binary(name: &str) -> Result<PathBuf> {
     let candidates = sidecar_candidates(name);
     for candidate in candidates {
         if candidate.exists() && !is_placeholder_sidecar(&candidate) {
+            ensure_executable(&candidate);
             info!(binary = %candidate.display(), "resolved sidecar binary");
             return Ok(candidate);
         }
     }
     Err(anyhow!("{name} sidecar not found in bundled resources"))
+}
+
+/// Bundlers/unzip tools can drop the exec bit; restore it instead of failing to spawn.
+fn ensure_executable(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = fs::metadata(path) {
+            let mut perms = meta.permissions();
+            if perms.mode() & 0o111 == 0 {
+                perms.set_mode(perms.mode() | 0o755);
+                if let Err(err) = fs::set_permissions(path, perms) {
+                    warn!(binary = %path.display(), error = %err, "sidecar is not executable");
+                }
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = path;
 }
 
 /// Check if a sidecar file is just a placeholder.
@@ -910,24 +942,26 @@ async fn build_output_template(request: &DownloadRequest, config: &AppConfig) ->
     next_available_path(&dir, &base, ext).display().to_string()
 }
 
-/// Sanitize a string for safe use in filenames — keep alphanumerics, spaces,
-/// hyphens and underscores.
+/// Make a title safe as a filename on Windows, macOS and Linux while keeping
+/// non-ASCII text (accents, Hindi, Japanese, …). `%` is dropped because the
+/// result is used inside a yt-dlp output template.
 fn sanitize_title_for_filename(input: &str) -> String {
-    let mut out = String::with_capacity(input.len());
-    for ch in input.chars() {
-        if ch.is_ascii_alphanumeric() || ch == ' ' || ch == '-' || ch == '_' {
-            out.push(ch);
-        } else {
-            out.push(' ');
-        }
-    }
-    let compact = out.split_whitespace().collect::<Vec<_>>().join(" ");
-    if compact.is_empty() {
+    let cleaned: String = input
+        .chars()
+        .map(|ch| match ch {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' | '%' => ' ',
+            c if c.is_control() => ' ',
+            c => c,
+        })
+        .collect();
+    let compact = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    // Windows rejects trailing dots/spaces; cap by chars so UTF-8 is never split.
+    let truncated: String = compact.chars().take(120).collect();
+    let trimmed = truncated.trim_end_matches(['.', ' ']).trim_start_matches('.');
+    if trimmed.is_empty() {
         "Island Video".to_string()
-    } else if compact.len() > 140 {
-        compact[..140].trim().to_string()
     } else {
-        compact
+        trimmed.to_string()
     }
 }
 
@@ -965,4 +999,18 @@ fn next_available_path(dir: &Path, base: &str, ext: &str) -> PathBuf {
         }
     }
     dir.join(format!("{base} (overflow).{ext}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filename_sanitizing() {
+        assert_eq!(sanitize_title_for_filename("Café test: vidéo"), "Café test vidéo");
+        assert_eq!(sanitize_title_for_filename("गाना | Song?"), "गाना Song");
+        assert_eq!(sanitize_title_for_filename("100% real..."), "100 real");
+        assert_eq!(sanitize_title_for_filename("..."), "Island Video");
+        assert_eq!(sanitize_title_for_filename(&"日".repeat(300)).chars().count(), 120);
+    }
 }
