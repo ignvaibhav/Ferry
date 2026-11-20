@@ -7,7 +7,6 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-const API_BASE = "http://127.0.0.1:49152";
 const BUTTON_ID = "ferry-injected-button";
 const PANEL_ID = "ferry-inline-panel";
 const WRAPPER_ID = "ferry-button-anchor";
@@ -29,23 +28,21 @@ async function safeSendMessage(message) {
   try { return await runtime.sendMessage(message); } catch { return null; }
 }
 
-async function queueDownload(payload) {
-  const res = await fetch(`${API_BASE}/download`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({}));
-    throw new Error(error.error || `failed (${res.status})`);
-  }
-  return res.json();
+// API calls go through the background worker: Island rejects page origins,
+// and Chrome's Local Network Access prompt would block youtube.com → localhost.
+async function callBackground(message, fallbackError) {
+  const res = await safeSendMessage(message);
+  if (!res) throw new Error("Ferry was updated or reloaded — refresh this page");
+  if (!res.ok) throw new Error(res.error || fallbackError);
+  return res.data;
 }
 
-async function fetchJobStatus(jobId) {
-  const res = await fetch(`${API_BASE}/status/${encodeURIComponent(jobId)}`);
-  if (!res.ok) throw new Error(`failed (${res.status})`);
-  return res.json();
+function queueDownload(payload) {
+  return callBackground({ type: "QUEUE_DOWNLOAD", payload }, "Download failed");
+}
+
+function fetchJobStatus(jobId) {
+  return callBackground({ type: "JOB_STATUS", jobId }, "Status check failed");
 }
 
 // ---------------------------------------------------------------------------
@@ -415,11 +412,10 @@ function applyPrefetchStateToPanel(panel) {
 
   if (prefetchState.error) {
     setFormatInteractionDisabled(panel, true);
-    const errorText = String(prefetchState.error || "Failed to load formats");
-    const message = errorText.toLowerCase().includes("desktop")
-      ? errorText
-      : `Desktop app not reachable: ${errorText}`;
-    setStatus(panel, message, false, true);
+    // Background already says "Island not reachable" for real connection failures;
+    // anything else is the actual reason (video unavailable, yt-dlp error, ...).
+    renderFormats(panel, [], false);
+    setStatus(panel, String(prefetchState.error || "Failed to load formats"), false, true);
     return;
   }
 
@@ -790,10 +786,11 @@ async function handleDownloadClick(panel) {
 
   if (mode !== "thumbnail") {
     const duration = getPlayerDurationSeconds();
-    payload.clip = {
-      start: String(panel.dataset.clipStart || 0),
-      end: String(panel.dataset.clipEnd || duration || 0),
-    };
+    const start = parseFloat(panel.dataset.clipStart || 0) || 0;
+    const end = parseFloat(panel.dataset.clipEnd || duration || 0) || 0;
+    // Only send a real sub-range: a full-length "clip" makes yt-dlp re-encode the whole video.
+    const isSubRange = end > start && (start > 0.5 || (duration > 0 && end < duration - 0.5));
+    if (isSubRange) payload.clip = { start: String(start), end: String(end) };
   }
 
   try {
@@ -1083,6 +1080,11 @@ function createButton() {
     if (!panel) { panel = createPanel(); wrapper.appendChild(panel); }
     const opening = panel.style.display === "none";
     panel.style.display = opening ? "flex" : "none";
+    // Open downward when there's no room above (small windows, video scrolled up).
+    if (opening && !isShorts) {
+      panel.classList.remove("is-below");
+      if (panel.getBoundingClientRect().top < 8) panel.classList.add("is-below");
+    }
     setButtonActiveState(opening);
     if (opening) {
       safeSendMessage({ type: "ENSURE_WS" }).catch(() => {});

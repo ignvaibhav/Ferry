@@ -160,6 +160,17 @@
   animation: ferry-slide-up var(--f-dur-base) var(--f-ease-expo);
 }
 
+/* Classes below set display:flex, which would otherwise override the hidden attribute
+   and render every tab's section and every quality menu at once. */
+#ferry-inline-panel [hidden] {
+  display: none !important;
+}
+
+#ferry-inline-panel.is-below {
+  bottom: auto;
+  top: calc(100% + 12px);
+}
+
 .ferry-button-anchor.is-shorts #ferry-inline-panel {
   position: fixed;
   left: 50%;
@@ -325,6 +336,7 @@
 }
 
 .ferry-progress-status {
+  overflow-wrap: anywhere;
   font-size: 10px;
   color: var(--f-muted);
   display: flex;

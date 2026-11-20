@@ -11,7 +11,6 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use serde_json::Value;
-use tokio::process::Command;
 use tracing::info;
 
 use crate::downloader::resolve_binary;
@@ -71,11 +70,12 @@ pub async fn fetch_formats(url: &str) -> Result<Vec<FormatOption>> {
 
     let output = tokio::time::timeout(
         FORMAT_PROBE_TIMEOUT,
-        Command::new(yt_dlp)
+        crate::downloader::yt_dlp_command(&yt_dlp)
             .arg("--dump-json")
             .arg("--no-warnings")
             .arg("--extractor-args")
             .arg(EXTRACTOR_ARGS)
+            .arg("--")
             .arg(url)
             .output(),
     )
@@ -89,8 +89,18 @@ pub async fn fetch_formats(url: &str) -> Result<Vec<FormatOption>> {
     .context("failed to run yt-dlp --dump-json")?;
 
     if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr).to_string();
-        return Err(anyhow::anyhow!("yt-dlp format probe failed: {err}"));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Show the user yt-dlp's last ERROR line (e.g. "Video unavailable"), not the whole log.
+        let reason = stderr
+            .lines()
+            .rev()
+            .find_map(|l| l.trim().strip_prefix("ERROR:"))
+            .map(str::trim)
+            .unwrap_or_else(|| stderr.trim());
+        return Err(anyhow::anyhow!(
+            "{}",
+            crate::downloader::humanize_download_error(reason)
+        ));
     }
 
     let data: Value =

@@ -24,27 +24,36 @@ copy_binary() {
 
 main() {
   ensure_cmd curl
-  ensure_cmd ffmpeg
-  ensure_cmd ffprobe
+  ensure_cmd tar
 
   mkdir -p "$RES_DIR"
 
   local arch
   local asset
+  local ff_asset
   arch="$(uname -m)"
   asset="yt-dlp_linux"
+  ff_asset="ffmpeg-master-latest-linux64-gpl"
   if [[ "$arch" == "aarch64" || "$arch" == "arm64" ]]; then
     asset="yt-dlp_linux_aarch64"
+    ff_asset="ffmpeg-master-latest-linuxarm64-gpl"
   fi
 
   log "Downloading standalone yt-dlp linux binary"
-  curl -L "https://github.com/yt-dlp/yt-dlp/releases/latest/download/${asset}" \
+  curl -fL "https://github.com/yt-dlp/yt-dlp/releases/latest/download/${asset}" \
     -o "$RES_DIR/yt-dlp-linux"
   chmod +x "$RES_DIR/yt-dlp-linux"
 
-  log "Copying ffmpeg and ffprobe into bundled sidecars"
-  copy_binary "$(command -v ffmpeg)" "$RES_DIR/ffmpeg-linux"
-  copy_binary "$(command -v ffprobe)" "$RES_DIR/ffprobe-linux"
+  # Static build: the distro ffmpeg links against system libav* and fails on
+  # machines that don't have the exact same packages installed.
+  log "Downloading static ffmpeg/ffprobe"
+  local tmp
+  tmp="$(mktemp -d)"
+  curl -fL "https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/${ff_asset}.tar.xz" \
+    | tar -xJ -C "$tmp"
+  copy_binary "$tmp/${ff_asset}/bin/ffmpeg" "$RES_DIR/ffmpeg-linux"
+  copy_binary "$tmp/${ff_asset}/bin/ffprobe" "$RES_DIR/ffprobe-linux"
+  rm -rf "$tmp"
 }
 
 main "$@"

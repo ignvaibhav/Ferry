@@ -8,8 +8,10 @@ use std::path::PathBuf;
 use std::process::Command as StdCommand;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Path, State};
-use axum::response::IntoResponse;
+use axum::extract::{Path, Request, State};
+use axum::http::{header, StatusCode};
+use axum::middleware::{self, Next};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{any, get, post};
 use axum::{Json, Router};
 use tauri::AppHandle;
@@ -64,6 +66,7 @@ pub async fn run(
         .route("/action/open-settings", any(open_settings_handler))
         .route("/action/open-downloads", any(open_downloads_handler))
         .route("/ws", any(ws_handler))
+        .layer(middleware::from_fn(reject_web_origins))
         .layer(TraceLayer::new_for_http())
         .layer(
             CorsLayer::new()
@@ -78,6 +81,36 @@ pub async fn run(
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+/// Only the extension, Island's own webview, or non-browser clients (no Origin)
+/// may call the API. Without this, any website could drive downloads or
+/// open files on the user's machine through 127.0.0.1.
+fn origin_allowed(origin: &str) -> bool {
+    origin.starts_with("chrome-extension://")
+        || origin.starts_with("moz-extension://")
+        || origin == "tauri://localhost"
+        || origin == "http://tauri.localhost"
+        || origin == "https://tauri.localhost"
+}
+
+async fn reject_web_origins(req: Request, next: Next) -> Response {
+    let origin = req
+        .headers()
+        .get(header::ORIGIN)
+        .map(|v| v.to_str().unwrap_or("invalid"));
+    if let Some(origin) = origin {
+        if !origin_allowed(origin) {
+            warn!(origin, "rejected request from disallowed origin");
+            return (StatusCode::FORBIDDEN, "origin not allowed").into_response();
+        }
+    }
+    next.run(req).await
+}
+
+fn is_http_url(url: &str) -> bool {
+    let u = url.trim();
+    u.starts_with("https://") || u.starts_with("http://")
 }
 
 // ---------------------------------------------------------------------------
@@ -104,8 +137,8 @@ async fn formats_endpoint(
     State(state): State<ApiState>,
     Json(payload): Json<FormatsRequest>,
 ) -> Result<Json<FormatsResponse>, AppError> {
-    if payload.url.trim().is_empty() {
-        return Err(AppError::BadRequest("url is required".to_string()));
+    if !is_http_url(&payload.url) {
+        return Err(AppError::BadRequest("a http(s) url is required".to_string()));
     }
 
     match formats::fetch_formats(&payload.url).await {
@@ -128,8 +161,8 @@ async fn download(
     State(state): State<ApiState>,
     Json(payload): Json<DownloadRequest>,
 ) -> Result<Json<DownloadResponse>, AppError> {
-    if payload.url.trim().is_empty() {
-        return Err(AppError::BadRequest("url is required".to_string()));
+    if !is_http_url(&payload.url) {
+        return Err(AppError::BadRequest("a http(s) url is required".to_string()));
     }
     if payload.format.trim().is_empty() || payload.quality.trim().is_empty() {
         return Err(AppError::BadRequest(
@@ -210,32 +243,9 @@ async fn reveal(Json(payload): Json<RevealRequest>) -> Result<Json<serde_json::V
         )));
     }
 
-    let result = if cfg!(target_os = "windows") {
-        // /select,path highlights the file in explorer
-        let selector = format!("/select,{}", target.display());
-        StdCommand::new("explorer").arg(selector).status()
-    } else if cfg!(target_os = "macos") {
-        // -R reveals and selects the file in Finder
-        StdCommand::new("open").arg("-R").arg(&target).status()
-    } else {
-        // Linux fallback (usually xdg-open doesn't select, but we open the folder)
-        let dir = if target.is_file() {
-            target.parent().unwrap_or(&target)
-        } else {
-            &target
-        };
-        StdCommand::new("xdg-open").arg(dir).status()
-    };
-
-    match result {
-        Ok(exit) if exit.success() => Ok(Json(serde_json::json!({ "ok": true }))),
-        Ok(exit) => Err(AppError::BadGateway(format!(
-            "reveal command failed: {exit}"
-        ))),
-        Err(error) => Err(AppError::BadGateway(format!(
-            "failed to start reveal command: {error}"
-        ))),
-    }
+    crate::reveal_path(&target)
+        .map(|_| Json(serde_json::json!({ "ok": true })))
+        .map_err(|e| AppError::BadGateway(format!("reveal failed: {e}")))
 }
 
 async fn open_file(
@@ -255,12 +265,11 @@ async fn open_file(
     }
 
     let result = if cfg!(target_os = "windows") {
-        StdCommand::new("cmd")
-            .arg("/C")
-            .arg("start")
-            .arg("")
-            .arg(&target)
-            .status()
+        // explorer opens with the default app without cmd.exe re-parsing the path
+        StdCommand::new("explorer").arg(&target).status().map(|_| {
+            // explorer.exe returns 1 even on success
+            std::process::ExitStatus::default()
+        })
     } else if cfg!(target_os = "macos") {
         StdCommand::new("open").arg(&target).status()
     } else {
@@ -331,5 +340,22 @@ async fn handle_socket(mut socket: WebSocket, queue: QueueState) {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn origin_policy() {
+        assert!(origin_allowed("chrome-extension://abcdef"));
+        assert!(origin_allowed("tauri://localhost"));
+        assert!(origin_allowed("http://tauri.localhost"));
+        assert!(!origin_allowed("https://www.youtube.com"));
+        assert!(!origin_allowed("https://evil.example"));
+        assert!(!origin_allowed("null"));
+        assert!(is_http_url("https://youtu.be/x"));
+        assert!(!is_http_url("--exec=calc"));
     }
 }

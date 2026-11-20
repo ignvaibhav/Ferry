@@ -52,7 +52,11 @@ export function loadFormats(url) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ url: url }),
   }).then(function(res) {
-    if (!res.ok) throw new Error("formats failed");
+    if (!res.ok) {
+      return res.json().catch(function() { return {}; }).then(function(body) {
+        throw new Error(body.error || "Could not load formats (" + res.status + ")");
+      });
+    }
     return res.json();
   }).then(function(data) {
     return data.formats || [];
@@ -70,7 +74,11 @@ export function queueDownload(payload) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   }).then(function(res) {
-    if (!res.ok) throw new Error("download failed");
+    if (!res.ok) {
+      return res.json().catch(function() { return {}; }).then(function(body) {
+        throw new Error(body.error || "download failed (" + res.status + ")");
+      });
+    }
     return res.json();
   });
 }
