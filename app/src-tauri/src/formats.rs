@@ -89,8 +89,18 @@ pub async fn fetch_formats(url: &str) -> Result<Vec<FormatOption>> {
     .context("failed to run yt-dlp --dump-json")?;
 
     if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr).to_string();
-        return Err(anyhow::anyhow!("yt-dlp format probe failed: {err}"));
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Show the user yt-dlp's last ERROR line (e.g. "Video unavailable"), not the whole log.
+        let reason = stderr
+            .lines()
+            .rev()
+            .find_map(|l| l.trim().strip_prefix("ERROR:"))
+            .map(str::trim)
+            .unwrap_or_else(|| stderr.trim());
+        return Err(anyhow::anyhow!(
+            "{}",
+            crate::downloader::humanize_download_error(reason)
+        ));
     }
 
     let data: Value =

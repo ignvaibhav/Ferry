@@ -412,11 +412,10 @@ function applyPrefetchStateToPanel(panel) {
 
   if (prefetchState.error) {
     setFormatInteractionDisabled(panel, true);
-    const errorText = String(prefetchState.error || "Failed to load formats");
-    const message = errorText.toLowerCase().includes("desktop")
-      ? errorText
-      : `Desktop app not reachable: ${errorText}`;
-    setStatus(panel, message, false, true);
+    // Background already says "Island not reachable" for real connection failures;
+    // anything else is the actual reason (video unavailable, yt-dlp error, ...).
+    renderFormats(panel, [], false);
+    setStatus(panel, String(prefetchState.error || "Failed to load formats"), false, true);
     return;
   }
 
@@ -787,10 +786,11 @@ async function handleDownloadClick(panel) {
 
   if (mode !== "thumbnail") {
     const duration = getPlayerDurationSeconds();
-    payload.clip = {
-      start: String(panel.dataset.clipStart || 0),
-      end: String(panel.dataset.clipEnd || duration || 0),
-    };
+    const start = parseFloat(panel.dataset.clipStart || 0) || 0;
+    const end = parseFloat(panel.dataset.clipEnd || duration || 0) || 0;
+    // Only send a real sub-range: a full-length "clip" makes yt-dlp re-encode the whole video.
+    const isSubRange = end > start && (start > 0.5 || (duration > 0 && end < duration - 0.5));
+    if (isSubRange) payload.clip = { start: String(start), end: String(end) };
   }
 
   try {
@@ -1080,6 +1080,11 @@ function createButton() {
     if (!panel) { panel = createPanel(); wrapper.appendChild(panel); }
     const opening = panel.style.display === "none";
     panel.style.display = opening ? "flex" : "none";
+    // Open downward when there's no room above (small windows, video scrolled up).
+    if (opening && !isShorts) {
+      panel.classList.remove("is-below");
+      if (panel.getBoundingClientRect().top < 8) panel.classList.add("is-below");
+    }
     setButtonActiveState(opening);
     if (opening) {
       safeSendMessage({ type: "ENSURE_WS" }).catch(() => {});

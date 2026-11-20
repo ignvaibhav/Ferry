@@ -321,7 +321,7 @@ function normalizePrefetchError(error) {
     message.includes("NetworkError") ||
     message.includes("fetch")
   ) {
-    return "Island desktop not reachable";
+    return "Island desktop app not reachable. Is it running?";
   }
   return message;
 }

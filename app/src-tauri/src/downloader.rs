@@ -375,6 +375,7 @@ async fn execute_download(
             }
             let _ = child.kill().await;
             let _ = child.wait().await;
+            remove_job_files(expected_path);
             let message = "Cancelled by user".to_string();
             let _ = tx
                 .send(DownloadEvent::Error {
@@ -464,7 +465,7 @@ fn build_download_command(
         "yt-dlp command selected"
     );
 
-    if let Some(clip) = &request.clip {
+    if let Some(clip) = request.clip.as_ref().filter(|c| is_valid_clip(&c.start, &c.end)) {
         if !is_thumbnail_request(request) {
             cmd.arg("--download-sections")
                 .arg(format!("*{}-{}", clip.start, clip.end))
@@ -479,6 +480,21 @@ fn build_download_command(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     cmd
+}
+
+/// Seconds from "90", "1:30" or "00:01:30(.5)".
+fn parse_timestamp(value: &str) -> Option<f64> {
+    value
+        .trim()
+        .split(':')
+        .try_fold(0.0, |acc, part| Some(acc * 60.0 + part.parse::<f64>().ok()?))
+        .filter(|secs| secs.is_finite() && *secs >= 0.0)
+}
+
+/// A clip must be a real, forward range; anything else downloads the full video
+/// instead of producing an empty file or a pointless full re-encode.
+fn is_valid_clip(start: &str, end: &str) -> bool {
+    matches!((parse_timestamp(start), parse_timestamp(end)), (Some(s), Some(e)) if e > s)
 }
 
 /// Apply format selection flags based on the download request.
@@ -658,7 +674,7 @@ fn extract_host(url: &str) -> Option<String> {
     }
 }
 
-fn humanize_download_error(message: &str) -> String {
+pub fn humanize_download_error(message: &str) -> String {
     let trimmed = message.trim();
     let lower = trimmed.to_ascii_lowercase();
 
@@ -667,6 +683,18 @@ fn humanize_download_error(message: &str) -> String {
         || lower.contains("name or service not known")
     {
         return "No internet / DNS failed. Could not resolve the download host.".to_string();
+    }
+
+    if lower.contains("sign in to confirm") || lower.contains("not a bot") {
+        return "YouTube wants a sign-in check for this video. Try again later, or a different video.".to_string();
+    }
+
+    if lower.contains("private video") {
+        return "This video is private.".to_string();
+    }
+
+    if lower.contains("video unavailable") || lower.contains("this video is not available") {
+        return "This video is unavailable (removed, region-locked or age-restricted).".to_string();
     }
 
     if lower.contains("timed out") {
@@ -705,26 +733,12 @@ async fn terminate_process_group(pid: u32) {
 
     #[cfg(not(target_os = "windows"))]
     {
-        // Kill the entire process group (yt-dlp + ffmpeg children)
-        // First try SIGKILL on the process group (-pid)
-        if let Ok(mut child) = Command::new("kill")
-            .arg("-9")
-            .arg(format!("-{}", pid))
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-        {
-            let _ = child.wait().await;
-        }
-        // Also kill the specific pid in case it wasn't in a group
-        if let Ok(mut child) = Command::new("kill")
-            .arg("-9")
-            .arg(pid.to_string())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-        {
-            let _ = child.wait().await;
+        // yt-dlp is a PyInstaller bootloader + Python child (+ ffmpeg); kill the
+        // whole group or the child keeps downloading after "cancel".
+        let pgid = pid as libc::pid_t;
+        // SAFETY: plain syscall; pgid is our own child's group (process_group(0)).
+        unsafe {
+            libc::kill(-pgid, libc::SIGKILL);
         }
     }
 }
@@ -818,6 +832,30 @@ fn bundled_binary(name: &str) -> Result<PathBuf> {
         }
     }
     Err(anyhow!("{name} sidecar not found in bundled resources"))
+}
+
+/// Delete everything yt-dlp wrote for a cancelled job (`.part`, `.ytdl`,
+/// `.f137.mp4` fragments, half-merged output). The output name is unique per
+/// job (see `next_available_path`), so only this job's files share its stem.
+fn remove_job_files(expected_path: &Path) {
+    let (Some(dir), Some(stem)) = (
+        expected_path.parent(),
+        expected_path.file_stem().and_then(|s| s.to_str()),
+    ) else {
+        return;
+    };
+    let prefix = format!("{stem}.");
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if name.to_str().is_some_and(|n| n.starts_with(&prefix)) {
+            if let Err(err) = fs::remove_file(entry.path()) {
+                warn!(file = %entry.path().display(), error = %err, "failed to remove cancelled download file");
+            }
+        }
+    }
 }
 
 /// Bundlers/unzip tools can drop the exec bit; restore it instead of failing to spawn.
@@ -1082,6 +1120,43 @@ fn next_available_path(dir: &Path, base: &str, ext: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cancelled_job_files_removed() {
+        let dir = std::env::temp_dir().join(format!("island-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        for f in ["Song [720p].mp4.part", "Song [720p].f137.mp4", "Song [720p].mp4.ytdl", "Song [720p] (2).mp4", "Other.mp4"] {
+            fs::write(dir.join(f), b"x").unwrap();
+        }
+        remove_job_files(&dir.join("Song [720p].mp4"));
+        let mut left: Vec<_> = fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        left.sort();
+        assert_eq!(left, ["Other.mp4", "Song [720p] (2).mp4"]);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn friendly_errors() {
+        let dns = "[youtube] x: Unable to download API page: HTTPSConnection(host='www.youtube.com'): Failed to resolve 'www.youtube.com' ([Errno -2] Name or service not known)";
+        assert_eq!(humanize_download_error(dns), "No internet / DNS failed. Could not resolve the download host.");
+        assert!(humanize_download_error("ERROR: [youtube] x: Video unavailable").contains("unavailable"));
+        assert!(humanize_download_error("ERROR: [youtube] x: Sign in to confirm you're not a bot").contains("sign-in"));
+        assert_eq!(humanize_download_error("ERROR: something else"), "something else");
+    }
+
+    #[test]
+    fn clip_validation() {
+        assert_eq!(parse_timestamp("00:01:30.5"), Some(90.5));
+        assert_eq!(parse_timestamp("1:30"), Some(90.0));
+        assert_eq!(parse_timestamp("12.25"), Some(12.25));
+        assert_eq!(parse_timestamp("abc"), None);
+        assert_eq!(parse_timestamp("-5"), None);
+        assert!(is_valid_clip("1", "3"));
+        assert!(is_valid_clip("00:00:01", "00:00:03"));
+        assert!(!is_valid_clip("0", "0"));
+        assert!(!is_valid_clip("10", "5"));
+        assert!(!is_valid_clip("", "5"));
+    }
 
     #[test]
     fn version_ordering() {
